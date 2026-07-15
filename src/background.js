@@ -19,8 +19,11 @@ import {
 } from "../lib/proxy.js";
 import { parseSubscription, subscriptionNodeToServer } from "../lib/subscriptions.js";
 
-const COUNTRY_API = "https://api.country.is/";
-const INTERNAL_PROXY_DOMAINS = Object.freeze(["api.country.is"]);
+const COUNTRY_SERVICES = Object.freeze([
+  Object.freeze({ url: "https://api.country.is/", ip: "ip", country: "country" }),
+  Object.freeze({ url: "https://ipwho.is/", ip: "ip", country: "country_code" })
+]);
+const INTERNAL_PROXY_DOMAINS = Object.freeze(COUNTRY_SERVICES.map((service) => new URL(service.url).hostname));
 const VERSION_FEED_URL = "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/release.json";
 
 const DEFAULT_SERVER = Object.freeze({
@@ -43,6 +46,7 @@ const DEFAULT_SERVER = Object.freeze({
 const DEFAULT_STATE = Object.freeze({
   enabled: true,
   configured: false,
+  routeMode: "selected",
   useCommunityList: true,
   communityDomains: [],
   communitySources: [],
@@ -113,6 +117,7 @@ function mergeState(saved = {}) {
   return {
     ...DEFAULT_STATE,
     ...saved,
+    routeMode: saved.routeMode === "all" ? "all" : "selected",
     servers,
     activeServerId,
     communityDomains: [...(saved.communityDomains ?? [])],
@@ -189,8 +194,8 @@ async function setBadge(state) {
         ? `Доступно обновление ${notice.version}`
         : `Обновлено до ${notice.version}`
       : active
-        ? "Amnezia Split включён"
-        : "Amnezia Split выключен"
+        ? "Routeva включена"
+        : "Routeva выключена"
   });
 }
 
@@ -209,7 +214,8 @@ async function applyProxy(providedState) {
     bypassDomains: state.bypassDomains,
     proxyHost: server.host,
     proxyPort: server.port,
-    proxyScheme: server.scheme
+    proxyScheme: server.scheme,
+    routeMode: state.routeMode
   });
 
   await chrome.proxy.settings.set({
@@ -436,20 +442,30 @@ async function deleteServer(id) {
 }
 
 async function fetchCountry(marker) {
-  const response = await fetch(`${COUNTRY_API}?${marker}=${Date.now()}`, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!response.ok) throw new Error(`Сервис геолокации ответил ${response.status}`);
-  const data = await response.json();
-  const code = normalizeCountryCode(data.country);
-  if (!data.ip || !code) throw new Error("Не удалось определить страну IP");
-  return {
-    ip: String(data.ip),
-    countryCode: code,
-    countryName: countryName(code),
-    flag: countryFlag(code)
-  };
+  let lastError = null;
+  for (const service of COUNTRY_SERVICES) {
+    try {
+      const url = new URL(service.url);
+      url.searchParams.set(marker, Date.now());
+      const response = await fetch(url.href, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const code = normalizeCountryCode(data[service.country]);
+      if (!data[service.ip] || !code) throw new Error("неполный ответ");
+      return {
+        ip: String(data[service.ip]),
+        countryCode: code,
+        countryName: countryName(code),
+        flag: countryFlag(code)
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(`Не удалось определить страну IP${lastError?.message ? `: ${lastError.message}` : ""}`);
 }
 
 async function saveServerLocation(state, serverId, location) {
@@ -524,11 +540,6 @@ function subscriptionSummary(subscription, includeUrl = false) {
   };
 }
 
-async function releaseUnusedSubscriptionOrigin(origin, subscriptions) {
-  if (!origin || subscriptions.some((subscription) => subscription.origin === origin)) return;
-  await chrome.permissions.remove({ origins: [`${origin}/*`] }).catch(() => false);
-}
-
 async function importSubscription(input = {}) {
   const state = await getState();
   let url;
@@ -538,10 +549,6 @@ async function importSubscription(input = {}) {
     throw new Error("Введите корректную HTTPS-ссылку подписки");
   }
   if (url.protocol !== "https:") throw new Error("Подписка должна использовать HTTPS");
-  const originPattern = `${url.origin}/*`;
-  const allowed = await chrome.permissions.contains({ origins: [originPattern] });
-  if (!allowed) throw new Error("Разрешите расширению открыть домен подписки");
-
   const response = await fetch(url.href, {
     cache: "no-store",
     redirect: "follow",
@@ -607,9 +614,6 @@ async function importSubscription(input = {}) {
     lastError: null
   });
   await applyProxy(next);
-  if (existing?.origin && existing.origin !== subscription.origin) {
-    await releaseUnusedSubscriptionOrigin(existing.origin, subscriptions);
-  }
   return getPublicStatus(null, next, true);
 }
 
@@ -622,7 +626,6 @@ async function refreshSubscription(id) {
 
 async function deleteSubscription(id) {
   const state = await getState();
-  const removed = state.subscriptions.find((item) => item.id === id);
   let servers = state.servers.filter((server) => server.subscriptionId !== id);
   if (!servers.length) servers = [normalizeServer(DEFAULT_SERVER)];
   const subscriptions = state.subscriptions.filter((item) => item.id !== id);
@@ -638,7 +641,6 @@ async function deleteSubscription(id) {
     lastError: null
   });
   await applyProxy(next);
-  await releaseUnusedSubscriptionOrigin(removed?.origin, subscriptions);
   return getPublicStatus(null, next, true);
 }
 
@@ -673,6 +675,7 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
   return {
     enabled: state.enabled,
     configured,
+    routeMode: state.routeMode,
     useCommunityList: state.useCommunityList,
     communityCount: state.communityDomains.length,
     communitySources: state.communitySources,
@@ -681,7 +684,7 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
     bypassDomains: state.bypassDomains,
     activeCount: domains.length,
     domainEntries: includeDomains
-      ? domains.map((domain) => ({ domain, source: routeSource(domain, state) }))
+      ? domains.map((domain) => ({ domain, source: routeSource(domain, { ...state, routeMode: "selected" }) }))
       : undefined,
     currentDomain: host ?? null,
     currentRouted: host ? source !== "direct" : false,
@@ -723,6 +726,12 @@ async function handleMessage(message) {
       await applyProxy(next);
       return getPublicStatus(normalizeDomain(message.host), next);
     }
+    case "setRouteMode": {
+      const routeMode = message.routeMode === "all" ? "all" : "selected";
+      const next = await saveState({ ...state, routeMode });
+      await applyProxy(next);
+      return getPublicStatus(normalizeDomain(message.host), next);
+    }
     case "toggleDomain":
       return toggleDomain(message.host);
     case "setCommunityList": {
@@ -748,6 +757,10 @@ async function handleMessage(message) {
       return deleteSubscription(String(message.id ?? ""));
     case "testProxy":
       return testProxy();
+    case "probeLocation": {
+      const next = await probeActiveServerLocation(state);
+      return getPublicStatus(normalizeDomain(message.host), next);
+    }
     case "addDomain":
     {
       const domain = normalizeDomain(message.host);

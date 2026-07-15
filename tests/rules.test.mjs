@@ -41,6 +41,18 @@ test("bypass rules win over core and community rules", () => {
   assert.equal(effectiveDomains(state).includes("chatgpt.com"), false);
 });
 
+test("all-sites mode proxies every domain except explicit bypasses", () => {
+  const state = {
+    routeMode: "all",
+    useCommunityList: false,
+    communityDomains: [],
+    customDomains: [],
+    bypassDomains: ["bank.example"]
+  };
+  assert.equal(routeSource("news.example", state), "all");
+  assert.equal(routeSource("bank.example", state), "direct");
+});
+
 test("PAC routes selected suffixes over HTTPS and defaults to direct", () => {
   const pac = generatePac({
     domains: ["openai.com"],
@@ -53,4 +65,18 @@ test("PAC routes selected suffixes over HTTPS and defaults to direct", () => {
   assert.equal(findProxy("https://chat.openai.com", "chat.openai.com"), "HTTPS proxy.example.com:18443");
   assert.equal(findProxy("https://status.openai.com", "status.openai.com"), "DIRECT");
   assert.equal(findProxy("https://example.org", "example.org"), "DIRECT");
+});
+
+test("PAC all-sites mode proxies arbitrary hosts but keeps bypasses direct", () => {
+  const pac = generatePac({
+    domains: [],
+    bypassDomains: ["bank.example"],
+    proxyHost: "proxy.example",
+    proxyPort: 443,
+    proxyScheme: "https",
+    routeMode: "all"
+  });
+  assert.match(pac, /var ROUTE_ALL = true/);
+  assert.match(pac, /if \(ROUTE_ALL\) return "HTTPS proxy\.example:443"/);
+  assert.match(pac, /if \(BYPASS\[candidates\[b\]\]\) return "DIRECT"/);
 });

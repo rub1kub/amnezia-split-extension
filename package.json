@@ -1,6 +1,6 @@
 {
-  "name": "amnezia-split-extension",
-  "version": "0.4.0",
+  "name": "routeva-extension",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
