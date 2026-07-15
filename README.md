@@ -4,6 +4,8 @@
 
 ![Окно Amnezia Split](docs/popup.png)
 
+**[Скачать готовое расширение (ZIP)](https://github.com/rub1kub/amnezia-split-extension/releases/latest)**
+
 ## Что умеет
 
 - сразу включает ChatGPT, OpenAI, Sora и связанные домены;
