@@ -9,6 +9,19 @@ import {
   routeSource
 } from "../lib/rules.js";
 import { compareVersions, releaseUrl } from "../lib/version.js";
+import {
+  countryFlag,
+  countryName,
+  DIRECT_PROXY_SCHEMES,
+  normalizeCountryCode,
+  normalizeProxyScheme,
+  protocolLabel
+} from "../lib/proxy.js";
+import { parseSubscription, subscriptionNodeToServer } from "../lib/subscriptions.js";
+
+const COUNTRY_API = "https://api.country.is/";
+const INTERNAL_PROXY_DOMAINS = Object.freeze(["api.country.is"]);
+const VERSION_FEED_URL = "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/release.json";
 
 const DEFAULT_SERVER = Object.freeze({
   id: "server-1",
@@ -16,7 +29,15 @@ const DEFAULT_SERVER = Object.freeze({
   host: "ton4.pro",
   port: 18443,
   username: "amnezia-browser",
-  password: ""
+  password: "",
+  scheme: "https",
+  protocol: "https",
+  source: "manual",
+  subscriptionId: null,
+  sourceNodeKey: null,
+  countryCode: "",
+  countryName: "",
+  exitIp: ""
 });
 
 const DEFAULT_STATE = Object.freeze({
@@ -30,6 +51,7 @@ const DEFAULT_STATE = Object.freeze({
   bypassDomains: [],
   activeServerId: DEFAULT_SERVER.id,
   servers: [DEFAULT_SERVER],
+  subscriptions: [],
   updateNotice: null,
   dismissedUpdateVersion: null,
   lastError: null
@@ -39,13 +61,39 @@ let stateCache = null;
 const proxyAuthAttempts = new Map();
 
 function normalizeServer(server = {}, fallbackId = "server-1", fallbackName = "Сервер") {
+  const scheme = normalizeProxyScheme(server.scheme || server.protocol || "https");
+  const countryCode = normalizeCountryCode(server.countryCode);
   return {
     id: String(server.id || fallbackId),
     name: String(server.name || fallbackName).trim() || fallbackName,
     host: String(server.host || "").trim().toLowerCase(),
     port: Number(server.port) || 0,
     username: String(server.username || "").trim(),
-    password: String(server.password || "")
+    password: String(server.password || ""),
+    scheme,
+    protocol: String(server.protocol || scheme).trim().toLowerCase(),
+    source: server.source === "subscription" ? "subscription" : "manual",
+    subscriptionId: server.subscriptionId ? String(server.subscriptionId) : null,
+    sourceNodeKey: server.sourceNodeKey ? String(server.sourceNodeKey) : null,
+    countryCode,
+    countryName: String(server.countryName || (countryCode ? countryName(countryCode) : "")),
+    exitIp: String(server.exitIp || "")
+  };
+}
+
+function normalizeSubscription(subscription = {}) {
+  return {
+    id: String(subscription.id || crypto.randomUUID()),
+    name: String(subscription.name || "Подписка").trim() || "Подписка",
+    url: String(subscription.url || "").trim(),
+    origin: String(subscription.origin || ""),
+    updatedAt: subscription.updatedAt || null,
+    nodeCount: Number(subscription.nodeCount) || 0,
+    compatibleCount: Number(subscription.compatibleCount) || 0,
+    companionCount: Number(subscription.companionCount) || 0,
+    protocols: [...(subscription.protocols ?? [])],
+    nodes: [...(subscription.nodes ?? [])],
+    lastError: subscription.lastError ? String(subscription.lastError) : null
   };
 }
 
@@ -70,7 +118,8 @@ function mergeState(saved = {}) {
     communityDomains: [...(saved.communityDomains ?? [])],
     communitySources: [...(saved.communitySources ?? [])],
     customDomains: [...(saved.customDomains ?? [])],
-    bypassDomains: [...(saved.bypassDomains ?? [])]
+    bypassDomains: [...(saved.bypassDomains ?? [])],
+    subscriptions: (saved.subscriptions ?? []).map(normalizeSubscription)
   };
 }
 
@@ -79,9 +128,10 @@ function getActiveServer(state) {
 }
 
 function isServerConfigured(server) {
-  return Boolean(
-    server?.host && Number(server.port) > 0 && server.username && server.password
-  );
+  if (!server?.host || Number(server.port) <= 0 || !DIRECT_PROXY_SCHEMES[normalizeProxyScheme(server.scheme)]) {
+    return false;
+  }
+  return Boolean(server.username) === Boolean(server.password);
 }
 
 async function getState() {
@@ -153,12 +203,13 @@ async function applyProxy(providedState) {
     return;
   }
 
-  const domains = effectiveDomains(state);
+  const domains = [...new Set([...effectiveDomains(state), ...INTERNAL_PROXY_DOMAINS])];
   const pac = generatePac({
     domains,
     bypassDomains: state.bypassDomains,
     proxyHost: server.host,
-    proxyPort: server.port
+    proxyPort: server.port,
+    proxyScheme: server.scheme
   });
 
   await chrome.proxy.settings.set({
@@ -219,11 +270,10 @@ async function broadcastUpdateNotice(notice) {
 
 async function checkForExtensionUpdate() {
   const manifest = chrome.runtime.getManifest();
-  if (!manifest.update_url) return null;
-  const response = await fetch(`${manifest.update_url}?ts=${Date.now()}`, { cache: "no-store" });
+  const response = await fetch(`${VERSION_FEED_URL}?ts=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Проверка обновления: HTTP ${response.status}`);
-  const xml = await response.text();
-  const remoteVersion = xml.match(/<updatecheck\b[^>]*\bversion=["']([^"']+)["']/i)?.[1];
+  const feed = await response.json();
+  const remoteVersion = String(feed.version || "");
   if (!remoteVersion) throw new Error("Не удалось прочитать версию обновления");
 
   const state = await getState();
@@ -236,7 +286,7 @@ async function checkForExtensionUpdate() {
   const notice = {
     kind: "available",
     version: remoteVersion,
-    url: releaseUrl(remoteVersion)
+    url: String(feed.url || releaseUrl(remoteVersion))
   };
   const next = await saveState({ ...state, updateNotice: notice });
   await setBadge(next);
@@ -305,13 +355,38 @@ async function saveServer(serverInput) {
   const port = Number(serverInput.port);
   const username = String(serverInput.username ?? "").trim();
   const password = String(serverInput.password ?? "");
+  const scheme = normalizeProxyScheme(serverInput.scheme || existing?.scheme || "https");
   if (!name) throw new Error("Введите название сервера");
   if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("Проверьте адрес сервера и порт");
   }
-  if (!username || !password) throw new Error("Введите логин и пароль");
+  if (Boolean(username) !== Boolean(password)) {
+    throw new Error("Укажите и логин, и пароль — либо оставьте оба поля пустыми");
+  }
 
-  const server = { id, name, host, port, username, password };
+  const server = normalizeServer({
+    ...existing,
+    id,
+    name,
+    host,
+    port,
+    username,
+    password,
+    scheme,
+    protocol: scheme,
+    source: "manual",
+    subscriptionId: null,
+    sourceNodeKey: null,
+    countryCode: host === existing?.host && port === existing?.port && scheme === existing?.scheme
+      ? existing.countryCode
+      : "",
+    countryName: host === existing?.host && port === existing?.port && scheme === existing?.scheme
+      ? existing.countryName
+      : "",
+    exitIp: host === existing?.host && port === existing?.port && scheme === existing?.scheme
+      ? existing.exitIp
+      : ""
+  });
   const servers = existing
     ? state.servers.map((item) => (item.id === id ? server : item))
     : [...state.servers, server];
@@ -338,7 +413,8 @@ async function selectServer(id) {
     lastError: null
   });
   await applyProxy(next);
-  return getPublicStatus(null, next, true);
+  const located = await probeActiveServerLocation(next).catch(() => next);
+  return getPublicStatus(null, located, true);
 }
 
 async function deleteServer(id) {
@@ -359,24 +435,58 @@ async function deleteServer(id) {
   return getPublicStatus(null, next, true);
 }
 
+async function fetchCountry(marker) {
+  const response = await fetch(`${COUNTRY_API}?${marker}=${Date.now()}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error(`Сервис геолокации ответил ${response.status}`);
+  const data = await response.json();
+  const code = normalizeCountryCode(data.country);
+  if (!data.ip || !code) throw new Error("Не удалось определить страну IP");
+  return {
+    ip: String(data.ip),
+    countryCode: code,
+    countryName: countryName(code),
+    flag: countryFlag(code)
+  };
+}
+
+async function saveServerLocation(state, serverId, location) {
+  const servers = state.servers.map((server) => server.id === serverId
+    ? normalizeServer({
+        ...server,
+        countryCode: location.countryCode,
+        countryName: location.countryName,
+        exitIp: location.ip
+      })
+    : server);
+  return saveState({ ...state, servers, lastError: null });
+}
+
+async function probeActiveServerLocation(providedState) {
+  const state = providedState ?? (await getState());
+  const server = getActiveServer(state);
+  if (!state.enabled || !isServerConfigured(server)) return state;
+  await applyProxy(state);
+  const location = await fetchCountry("probe");
+  return saveServerLocation(state, server.id, location);
+}
+
 async function testProxy() {
-  const state = await getState();
+  let state = await getState();
   const server = getActiveServer(state);
   if (!isServerConfigured(server)) throw new Error("Сначала сохраните данные подключения");
   try {
     await chrome.proxy.settings.clear({ scope: "regular" });
-    const directResponse = await fetch(`https://api.ipify.org?format=json&direct=${Date.now()}`, {
-      cache: "no-store"
-    });
-    if (!directResponse.ok) throw new Error("Не удалось проверить обычное подключение");
-    const direct = await directResponse.json();
+    const direct = await fetchCountry("direct");
 
     await chrome.proxy.settings.set({
       value: {
         mode: "fixed_servers",
         rules: {
           singleProxy: {
-            scheme: "https",
+            scheme: server.scheme,
             host: server.host,
             port: Number(server.port)
           }
@@ -384,15 +494,152 @@ async function testProxy() {
       },
       scope: "regular"
     });
-    const response = await fetch(`https://api.ipify.org?format=json&proxy=${Date.now()}`, {
-      cache: "no-store"
-    });
-    if (!response.ok) throw new Error(`Прокси ответил ${response.status}`);
-    const proxied = await response.json();
-    return { directIp: direct.ip, proxyIp: proxied.ip };
+    const proxied = await fetchCountry("proxy");
+    state = await saveServerLocation(state, server.id, proxied);
+    return {
+      directIp: direct.ip,
+      proxyIp: proxied.ip,
+      countryCode: proxied.countryCode,
+      countryName: proxied.countryName,
+      flag: proxied.flag
+    };
   } finally {
     await applyProxy(state);
   }
+}
+
+function subscriptionSummary(subscription, includeUrl = false) {
+  return {
+    id: subscription.id,
+    name: subscription.name,
+    origin: subscription.origin,
+    updatedAt: subscription.updatedAt,
+    nodeCount: subscription.nodeCount,
+    compatibleCount: subscription.compatibleCount,
+    companionCount: subscription.companionCount,
+    protocols: subscription.protocols,
+    nodes: subscription.nodes,
+    lastError: subscription.lastError,
+    ...(includeUrl ? { url: subscription.url } : {})
+  };
+}
+
+async function releaseUnusedSubscriptionOrigin(origin, subscriptions) {
+  if (!origin || subscriptions.some((subscription) => subscription.origin === origin)) return;
+  await chrome.permissions.remove({ origins: [`${origin}/*`] }).catch(() => false);
+}
+
+async function importSubscription(input = {}) {
+  const state = await getState();
+  let url;
+  try {
+    url = new URL(String(input.url || ""));
+  } catch {
+    throw new Error("Введите корректную HTTPS-ссылку подписки");
+  }
+  if (url.protocol !== "https:") throw new Error("Подписка должна использовать HTTPS");
+  const originPattern = `${url.origin}/*`;
+  const allowed = await chrome.permissions.contains({ origins: [originPattern] });
+  if (!allowed) throw new Error("Разрешите расширению открыть домен подписки");
+
+  const response = await fetch(url.href, {
+    cache: "no-store",
+    redirect: "follow",
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) throw new Error(`Подписка ответила HTTP ${response.status}`);
+  const length = Number(response.headers.get("content-length")) || 0;
+  if (length > 2_000_000) throw new Error("Подписка больше 2 МБ");
+  const text = await response.text();
+  if (text.length > 2_000_000) throw new Error("Подписка больше 2 МБ");
+  const parsed = parseSubscription(text);
+  if (!parsed.nodes.length) throw new Error("В подписке не найдено поддерживаемых форматов");
+
+  const existing = state.subscriptions.find((item) => item.id === input.id);
+  const id = existing?.id || crypto.randomUUID();
+  const oldServers = state.servers.filter((server) => server.subscriptionId === id);
+  const oldIdsByKey = new Map(oldServers.map((server) => [server.sourceNodeKey, server.id]));
+  const importedServers = parsed.nodes
+    .map((node) => subscriptionNodeToServer(node, id, oldIdsByKey.get(node.key) || crypto.randomUUID()))
+    .filter(Boolean)
+    .map(normalizeServer);
+  let servers = [
+    ...state.servers.filter((server) => server.subscriptionId !== id),
+    ...importedServers
+  ];
+  if (!servers.length) servers = [normalizeServer(DEFAULT_SERVER)];
+
+  const activeStillExists = servers.some((server) => server.id === state.activeServerId);
+  const activeServerId = activeStillExists
+    ? state.activeServerId
+    : importedServers[0]?.id || servers[0].id;
+  const subscription = normalizeSubscription({
+    id,
+    name: String(input.name || existing?.name || url.hostname).trim(),
+    url: url.href,
+    origin: url.origin,
+    updatedAt: new Date().toISOString(),
+    nodeCount: parsed.nodes.length,
+    compatibleCount: parsed.compatibleCount,
+    companionCount: parsed.companionCount,
+    protocols: parsed.protocols,
+    nodes: parsed.nodes.map((node) => ({
+      name: node.name,
+      protocol: node.protocol,
+      protocolLabel: node.protocolLabel,
+      host: node.host,
+      port: node.port,
+      compatible: node.compatible,
+      requiresCompanion: node.requiresCompanion
+    })),
+    lastError: null
+  });
+  const subscriptions = existing
+    ? state.subscriptions.map((item) => item.id === id ? subscription : item)
+    : [...state.subscriptions, subscription];
+  const activeServer = servers.find((server) => server.id === activeServerId) || servers[0];
+  const next = await saveState({
+    ...state,
+    servers,
+    subscriptions,
+    activeServerId: activeServer.id,
+    configured: isServerConfigured(activeServer),
+    lastError: null
+  });
+  await applyProxy(next);
+  if (existing?.origin && existing.origin !== subscription.origin) {
+    await releaseUnusedSubscriptionOrigin(existing.origin, subscriptions);
+  }
+  return getPublicStatus(null, next, true);
+}
+
+async function refreshSubscription(id) {
+  const state = await getState();
+  const subscription = state.subscriptions.find((item) => item.id === id);
+  if (!subscription) throw new Error("Подписка не найдена");
+  return importSubscription({ id, name: subscription.name, url: subscription.url });
+}
+
+async function deleteSubscription(id) {
+  const state = await getState();
+  const removed = state.subscriptions.find((item) => item.id === id);
+  let servers = state.servers.filter((server) => server.subscriptionId !== id);
+  if (!servers.length) servers = [normalizeServer(DEFAULT_SERVER)];
+  const subscriptions = state.subscriptions.filter((item) => item.id !== id);
+  const activeServer = servers.some((server) => server.id === state.activeServerId)
+    ? servers.find((server) => server.id === state.activeServerId)
+    : servers[0];
+  const next = await saveState({
+    ...state,
+    servers,
+    subscriptions,
+    activeServerId: activeServer.id,
+    configured: isServerConfigured(activeServer),
+    lastError: null
+  });
+  await applyProxy(next);
+  await releaseUnusedSubscriptionOrigin(removed?.origin, subscriptions);
+  return getPublicStatus(null, next, true);
 }
 
 function getPublicStatus(host, state, includeCredentials = false, includeDomains = false) {
@@ -401,14 +648,27 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
   const activeServer = getActiveServer(state);
   const configured = isServerConfigured(activeServer);
   const exposeServer = (server) => includeCredentials
-    ? { ...server }
+    ? {
+        ...server,
+        protocolLabel: protocolLabel(server.protocol || server.scheme),
+        flag: countryFlag(server.countryCode)
+      }
     : {
         id: server.id,
         name: server.name,
         host: server.host,
         port: server.port,
+        scheme: server.scheme,
+        protocol: server.protocol,
+        protocolLabel: protocolLabel(server.protocol || server.scheme),
         username: server.username,
-        hasPassword: Boolean(server.password)
+        hasPassword: Boolean(server.password),
+        source: server.source,
+        subscriptionId: server.subscriptionId,
+        countryCode: server.countryCode,
+        countryName: server.countryName,
+        flag: countryFlag(server.countryCode),
+        exitIp: server.exitIp
       };
   return {
     enabled: state.enabled,
@@ -429,6 +689,13 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
     activeServerId: activeServer.id,
     activeServer: exposeServer(activeServer),
     servers: state.servers.map(exposeServer),
+    subscriptions: state.subscriptions.map((subscription) =>
+      subscriptionSummary(subscription, includeCredentials)
+    ),
+    supportedProxySchemes: Object.entries(DIRECT_PROXY_SCHEMES).map(([id, item]) => ({
+      id,
+      label: item.label
+    })),
     proxy: exposeServer(activeServer),
     updateNotice: publicUpdateNotice(state),
     lastError: state.lastError
@@ -473,6 +740,12 @@ async function handleMessage(message) {
       return selectServer(String(message.id ?? ""));
     case "deleteServer":
       return deleteServer(String(message.id ?? ""));
+    case "importSubscription":
+      return importSubscription(message.subscription ?? {});
+    case "refreshSubscription":
+      return refreshSubscription(String(message.id ?? ""));
+    case "deleteSubscription":
+      return deleteSubscription(String(message.id ?? ""));
     case "testProxy":
       return testProxy();
     case "addDomain":
@@ -526,6 +799,7 @@ chrome.webRequest.onAuthRequired.addListener(
         const challenger = details.challenger?.host?.toLowerCase();
         if (challenger && challenger !== server.host.toLowerCase()) return callback();
         if (!isServerConfigured(server)) return callback({ cancel: true });
+        if (!server.username || !server.password) return callback();
         const attempts = proxyAuthAttempts.get(details.requestId) ?? 0;
         if (attempts >= 2) return callback({ cancel: true });
         proxyAuthAttempts.set(details.requestId, attempts + 1);

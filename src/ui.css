@@ -49,7 +49,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .update-card button, .update-strip button { flex: 0 0 auto; width: 27px; height: 27px; padding: 0; border: 0; border-radius: 8px; color: #8077ad; background: rgba(111,91,231,.08); font-size: 18px; line-height: 1; cursor: pointer; }
 .update-card button:hover, .update-strip button:hover { color: #403578; background: rgba(111,91,231,.15); }
 
-.status-card { position: relative; overflow: hidden; min-height: 190px; padding: 24px; border-radius: 24px; color: #fff; background: linear-gradient(145deg, #172a24, #0e3f32); box-shadow: 0 18px 42px rgba(8, 73, 53, 0.24); transition: 180ms ease; }
+.server-deck { position: relative; }
+.server-track { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+.server-track::-webkit-scrollbar { display: none; }
+.status-card { position: relative; overflow: hidden; min-height: 222px; padding: 24px; border-radius: 24px; color: #fff; background: linear-gradient(145deg, #172a24, #0e3f32); box-shadow: 0 18px 42px rgba(8, 73, 53, 0.24); transition: 180ms ease; }
+.server-slide { flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always; }
 .status-card::after { content: ""; position: absolute; width: 190px; height: 190px; right: -72px; top: -94px; border-radius: 50%; background: radial-gradient(circle, rgba(53, 224, 164, 0.28), transparent 68%); pointer-events: none; }
 .status-card.is-off { background: linear-gradient(145deg, #37413e, #252d2b); box-shadow: 0 16px 36px rgba(25, 34, 31, 0.16); }
 .status-copy { position: relative; z-index: 1; max-width: 220px; }
@@ -57,6 +61,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .status-card.is-off .eyebrow { color: #c5ceca; }
 .status-card h1 { margin: 10px 0 4px; font-size: 27px; line-height: 1.1; letter-spacing: -0.045em; }
 .status-card p { margin: 0; color: rgba(255,255,255,.68); font-size: 13px; }
+.server-slide-top { position: absolute; z-index: 2; top: 22px; right: 84px; display: flex; align-items: center; gap: 8px; }
+.protocol-pill { padding: 5px 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; color: rgba(255,255,255,.76); background: rgba(255,255,255,.08); font-size: 9px; font-weight: 750; letter-spacing: .05em; }
+.country-flag { font-size: 22px; line-height: 1; filter: drop-shadow(0 2px 5px rgba(0,0,0,.2)); }
+.country-flag-image { display: block; width: 28px; height: 21px; object-fit: cover; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 2px 6px rgba(0,0,0,.14); }
+.server-slide-info { position: absolute; z-index: 1; left: 24px; right: 24px; bottom: 48px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.server-slide-info strong { overflow: hidden; max-width: 58%; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.server-slide-info span { overflow: hidden; color: rgba(255,255,255,.56); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
 .power-switch { position: absolute; z-index: 2; top: 24px; right: 24px; width: 50px; height: 30px; padding: 3px; border: 0; border-radius: 999px; background: rgba(255,255,255,.2); cursor: pointer; transition: 160ms ease; }
 .power-switch span, .mini-toggle span { display: block; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.18); transition: transform 180ms cubic-bezier(.2,.9,.3,1.2); }
@@ -67,6 +78,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .route-count { position: absolute; left: 24px; bottom: 20px; display: flex; align-items: baseline; gap: 7px; }
 .route-count strong { font-size: 18px; letter-spacing: -0.03em; }
 .route-count span { color: rgba(255,255,255,.64); font-size: 11px; }
+.server-pagination { min-height: 25px; display: flex; align-items: center; justify-content: center; gap: 9px; padding-top: 9px; color: #89938f; font-size: 9px; }
+.server-dots { display: flex; gap: 4px; }
+.server-dot { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 99px; background: #cbd2cf; cursor: pointer; transition: 160ms ease; }
+.server-dot.active { width: 16px; background: var(--green); }
 
 .server-panel { margin-top: 12px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
 .server-panel label { display: flex; align-items: center; gap: 12px; }
@@ -138,6 +153,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .danger-button:hover { border-color: #e7b5b5; background: #fff2f2; }
 .danger-button:disabled { color: #a7afac; cursor: not-allowed; background: #f3f5f4; }
 
+.subscription-form { display: grid; grid-template-columns: 180px 1fr; gap: 14px; }
+.subscription-url { grid-column: 2; }
+.subscription-form .primary-button { grid-column: 1 / -1; }
+.primary-button.compact { width: auto; min-width: 210px; justify-self: end; margin-top: 0; padding: 0 20px; }
+.privacy-note { margin: 12px 0 0; color: #929b97; font-size: 10px; line-height: 1.45; }
+.subscription-list { display: grid; gap: 10px; margin-top: 20px; }
+.subscription-card { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px 14px; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: #fafcfb; }
+.subscription-main { min-width: 0; }
+.subscription-main strong { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.subscription-main > span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+.subscription-protocols { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.subscription-protocols span { padding: 4px 7px; border-radius: 999px; color: #5a4bb3; background: #eeebff; font-size: 9px; font-weight: 700; }
+.subscription-actions { display: flex; align-items: start; gap: 5px; }
+.subscription-actions button { padding: 7px 9px; border: 0; border-radius: 8px; color: var(--purple); background: #efedff; font-size: 10px; font-weight: 680; cursor: pointer; }
+.subscription-actions button.delete { color: #a33f3f; background: #fff0f0; }
+.subscription-nodes { grid-column: 1 / -1; display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.subscription-node { display: grid; grid-template-columns: 64px minmax(0,1fr) auto; align-items: center; gap: 8px; color: #5e6a65; font-size: 10px; }
+.subscription-node b { color: #5345aa; font-size: 9px; }
+.subscription-node span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subscription-node em { color: #8b9591; font-size: 9px; font-style: normal; }
+.protocol-guide { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; padding: 15px; border-radius: 16px; background: #f3f5f4; }
+.protocol-guide > div { display: flex; flex-direction: column; gap: 4px; }
+.protocol-guide strong { font-size: 11px; }
+.protocol-guide span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.protocol-guide p { grid-column: 1 / -1; margin: 2px 0 0; color: #7b8581; font-size: 10px; line-height: 1.5; }
+
 .test-result { margin-top: 12px; padding: 11px 13px; border-radius: 11px; font-size: 12px; }
 .test-result.loading { color: #6253bc; background: #f1efff; }
 .test-result.success { color: var(--green-dark); background: var(--green-soft); }
@@ -194,7 +235,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .brand.large img { width: 40px; height: 40px; }
   .welcome { margin-top: 46px; }
   .settings-card { padding: 20px; border-radius: 20px; }
-  .field-grid, .domain-columns, .server-toolbar { grid-template-columns: 1fr; }
+  .field-grid, .domain-columns, .server-toolbar, .subscription-form, .protocol-guide { grid-template-columns: 1fr; }
+  .subscription-url, .subscription-form .primary-button, .protocol-guide p { grid-column: 1; }
+  .primary-button.compact { width: 100%; justify-self: stretch; }
   .field.wide { grid-column: auto; }
   .options-footer { flex-direction: column; gap: 8px; }
   .domain-search-row { align-items: stretch; flex-direction: column; gap: 7px; }

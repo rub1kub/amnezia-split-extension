@@ -27,21 +27,13 @@
         <button id="dismissUpdate" type="button" aria-label="Скрыть уведомление">×</button>
       </aside>
 
-      <section class="status-card" id="statusCard">
-        <div class="status-copy">
-          <span class="eyebrow" id="statusEyebrow">ГОТОВ К РАБОТЕ</span>
-          <h1 id="statusTitle">VPN включён</h1>
-          <p id="statusText">Только выбранные сайты</p>
-        </div>
+      <section class="server-deck" id="serverDeck" aria-label="Серверы. Листайте влево или вправо">
+        <div class="server-track" id="serverTrack"></div>
         <button class="power-switch" id="masterToggle" type="button" role="switch" aria-checked="true">
           <span></span>
         </button>
-        <div class="route-count"><strong id="activeCount">0</strong><span>доменов через VPN</span></div>
       </section>
-
-      <section class="server-panel">
-        <label for="serverSelect"><span>Сервер</span><select id="serverSelect" aria-label="Выбрать сервер"></select></label>
-      </section>
+      <div class="server-pagination"><div class="server-dots" id="serverDots"></div><span id="serverPosition">1 из 1 · листайте карточку</span></div>
 
       <section class="panel current-site" id="currentSitePanel">
         <div class="site-mark" id="siteMark">A</div>
