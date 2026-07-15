@@ -16,6 +16,13 @@
         <div class="header-status"><span id="headerDot"></span><strong id="headerStatus">Настройка</strong></div>
       </header>
 
+      <aside class="update-strip hidden" id="updateCard">
+        <span class="update-dot"></span>
+        <strong id="updateText">Amnezia Split обновлён</strong>
+        <a id="updateLink" href="#" target="_blank" rel="noreferrer">Что нового</a>
+        <button id="dismissUpdate" type="button" aria-label="Скрыть уведомление">×</button>
+      </aside>
+
       <section class="welcome">
         <span class="eyebrow">ПРОЩЕ НЕКУДА</span>
         <h1>Ваши серверы — в одном месте</h1>
@@ -46,8 +53,17 @@
         <div class="section-heading"><span class="step">2</span><div><h2>Сайты</h2><p>Готовый список обновляется автоматически</p></div></div>
         <div class="setting-row">
           <div><strong>Список для России</strong><span id="listMeta">Загрузка…</span></div>
-          <div class="row-actions"><button class="text-button" id="refreshList" type="button">Обновить</button><button class="mini-toggle" id="optionsCommunityToggle" type="button" role="switch" aria-checked="true"><span></span></button></div>
+          <div class="row-actions"><button class="text-button" id="toggleDomains" type="button">Посмотреть домены</button><button class="text-button" id="refreshList" type="button">Обновить</button><button class="mini-toggle" id="optionsCommunityToggle" type="button" role="switch" aria-checked="true"><span></span></button></div>
         </div>
+        <section class="domain-explorer hidden" id="domainExplorer" aria-label="Домены через VPN">
+          <div class="domain-search-row">
+            <label class="domain-search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.5 19.1-4.2-4.2a7 7 0 1 0-1.4 1.4l4.2 4.2 1.4-1.4ZM5.5 10.8a5.3 5.3 0 1 1 10.6 0 5.3 5.3 0 0 1-10.6 0Z"/></svg><input id="domainSearch" type="search" placeholder="Найти домен, например discord.com" autocomplete="off" spellcheck="false" /></label>
+            <span id="domainResultsMeta">0 доменов</span>
+          </div>
+          <div class="domain-list" id="domainList"></div>
+          <button class="domain-more hidden" id="loadMoreDomains" type="button">Показать ещё</button>
+          <p class="domain-sources" id="domainSources"></p>
+        </section>
         <form class="add-domain" id="addDomainForm">
           <label class="field"><span>Добавить свой сайт</span><div class="input-action"><input id="newDomain" type="text" placeholder="example.com" spellcheck="false" /><button type="submit">Добавить</button></div></label>
         </form>
@@ -57,7 +73,7 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Amnezia Split 0.2.0 · обновляется автоматически</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Список доменов: itdoginfo</a></footer>
+      <footer class="options-footer"><span>Amnezia Split 0.3.0 · обновляется автоматически</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
     <script type="module" src="options.js"></script>

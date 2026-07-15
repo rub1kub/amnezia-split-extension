@@ -4,7 +4,12 @@ const PREVIEW_STATUS = {
   enabled: true,
   configured: true,
   useCommunityList: true,
-  communityCount: 1183,
+  communityCount: 1687,
+  communitySources: [
+    { id: "itdog", name: "itdoginfo — Россия", count: 1183 },
+    { id: "refilter", name: "Re-filter — сообщество", count: 672 },
+    { id: "google-ai", name: "itdoginfo — Google AI", count: 28 }
+  ],
   communityUpdatedAt: "2026-07-15T00:00:00.000Z",
   customDomains: ["example.com", "claude.ai"],
   bypassDomains: ["status.openai.com"],
@@ -20,14 +25,30 @@ const PREVIEW_STATUS = {
   servers: [
     { id: "server-1", name: "Основной сервер", host: "ton4.pro", port: 18443, username: "amnezia-browser", password: "" },
     { id: "server-2", name: "Резервный", host: "backup.example.com", port: 443, username: "user", password: "demo" }
-  ]
+  ],
+  domainEntries: [
+    { domain: "chatgpt.com", source: "core" },
+    { domain: "openai.com", source: "core" },
+    { domain: "discord.com", source: "community" },
+    { domain: "instagram.com", source: "community" },
+    { domain: "youtube.com", source: "community" },
+    { domain: "gemini.google.com", source: "community" },
+    { domain: "example.com", source: "custom" }
+  ],
+  updateNotice: {
+    kind: "installed",
+    version: "0.3.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.3.0"
+  }
 };
 let status = null;
 let editingServerId = null;
+let domainLimit = 100;
 
 async function send(type, payload = {}) {
   if (PREVIEW) {
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
+    if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
     return { ...PREVIEW_STATUS };
   }
   const response = await chrome.runtime.sendMessage({ type, ...payload });
@@ -80,7 +101,70 @@ function renderChips(container, domains, type, emptyText) {
   domains.forEach((domain) => container.append(makeChip(domain, type)));
 }
 
+function sourceLabel(source) {
+  return {
+    core: "Встроено",
+    community: "Готовый список",
+    custom: "Добавлено вами"
+  }[source] || "Через VPN";
+}
+
+function renderUpdateNotice(notice) {
+  const card = $("#updateCard");
+  card.classList.toggle("hidden", !notice);
+  if (!notice) return;
+  $("#updateText").textContent = notice.kind === "installed"
+    ? `Обновлено до версии ${notice.version}`
+    : `Доступна версия ${notice.version}`;
+  $("#updateLink").href = notice.url;
+}
+
+function renderDomainViewer() {
+  const entries = status?.domainEntries ?? [];
+  const query = $("#domainSearch").value.trim().toLowerCase();
+  const filtered = query
+    ? entries.filter((entry) => entry.domain.includes(query))
+    : entries;
+  const visible = filtered.slice(0, domainLimit);
+  const list = $("#domainList");
+  list.replaceChildren();
+
+  if (!visible.length) {
+    const empty = document.createElement("p");
+    empty.className = "domain-empty";
+    empty.textContent = "Ничего не найдено";
+    list.append(empty);
+  } else {
+    const fragment = document.createDocumentFragment();
+    visible.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "domain-row";
+      const dot = document.createElement("span");
+      dot.className = `domain-source-dot ${entry.source}`;
+      const domain = document.createElement("strong");
+      domain.textContent = entry.domain;
+      const source = document.createElement("span");
+      source.textContent = sourceLabel(entry.source);
+      row.append(dot, domain, source);
+      fragment.append(row);
+    });
+    list.append(fragment);
+  }
+
+  $("#domainResultsMeta").textContent = query
+    ? `Найдено ${filtered.length.toLocaleString("ru-RU")}`
+    : `${filtered.length.toLocaleString("ru-RU")} доменов`;
+  const more = $("#loadMoreDomains");
+  more.classList.toggle("hidden", visible.length >= filtered.length);
+  if (visible.length < filtered.length) {
+    more.textContent = `Показать ещё · ${Math.min(100, filtered.length - visible.length)}`;
+  }
+}
+
 function render(next) {
+  if (!Array.isArray(next.domainEntries)) {
+    next = { ...next, domainEntries: status?.domainEntries ?? [] };
+  }
   status = next;
   editingServerId = next.activeServerId;
   const server = next.activeServer;
@@ -102,16 +186,21 @@ function render(next) {
   $("#listMeta").textContent = `${next.communityCount.toLocaleString("ru-RU")} доменов · ${
     next.communityUpdatedAt ? new Date(next.communityUpdatedAt).toLocaleDateString("ru-RU") : "не обновлялся"
   }`;
+  $("#domainSources").textContent = next.communitySources?.length
+    ? `Источники: ${next.communitySources.map((source) => source.name).join(" · ")}`
+    : "Источник: встроенный список";
   $("#customCount").textContent = next.customDomains.length;
   $("#bypassCount").textContent = next.bypassDomains.length;
   renderChips($("#customDomains"), next.customDomains, "custom", "Пока нет своих сайтов");
   renderChips($("#bypassDomains"), next.bypassDomains, "bypass", "Исключений нет");
   $("#headerDot").classList.toggle("active", next.enabled && next.configured);
   $("#headerStatus").textContent = next.configured ? (next.enabled ? "Работает" : "На паузе") : "Не настроено";
+  renderUpdateNotice(next.updateNotice);
+  renderDomainViewer();
 }
 
 async function refresh() {
-  render(await send("getStatus", { includeCredentials: true }));
+  render(await send("getStatus", { includeCredentials: true, includeDomains: true }));
 }
 
 $("#showPassword").addEventListener("click", () => {
@@ -208,6 +297,37 @@ $("#refreshList").addEventListener("click", async () => {
   } finally {
     button.disabled = false;
     button.textContent = "Обновить";
+  }
+});
+
+$("#toggleDomains").addEventListener("click", () => {
+  const explorer = $("#domainExplorer");
+  const opening = explorer.classList.contains("hidden");
+  explorer.classList.toggle("hidden", !opening);
+  $("#toggleDomains").textContent = opening ? "Скрыть домены" : "Посмотреть домены";
+  if (opening) {
+    domainLimit = 100;
+    renderDomainViewer();
+    $("#domainSearch").focus();
+  }
+});
+
+$("#domainSearch").addEventListener("input", () => {
+  domainLimit = 100;
+  renderDomainViewer();
+});
+
+$("#loadMoreDomains").addEventListener("click", () => {
+  domainLimit += 100;
+  renderDomainViewer();
+});
+
+$("#dismissUpdate").addEventListener("click", async () => {
+  try {
+    await send("dismissUpdateNotice");
+    renderUpdateNotice(null);
+  } catch (error) {
+    toast(error.message, "error");
   }
 });
 
