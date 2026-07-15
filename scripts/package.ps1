@@ -5,8 +5,9 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root "dist"
-$stageName = if ($Store) { "amnezia-split-store" } else { "amnezia-split" }
-$zipName = if ($Store) { "amnezia-split-0.4.0-store.zip" } else { "amnezia-split-extension.zip" }
+$version = (Get-Content -LiteralPath (Join-Path $root "manifest.json") -Raw -Encoding UTF8 | ConvertFrom-Json).version
+$stageName = if ($Store) { "routeva-store" } else { "routeva" }
+$zipName = if ($Store) { "routeva-$version-store.zip" } else { "routeva-extension.zip" }
 $stage = Join-Path $dist $stageName
 $zip = Join-Path $dist $zipName
 $distFull = [IO.Path]::GetFullPath($dist)

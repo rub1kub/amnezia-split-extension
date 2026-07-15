@@ -4,6 +4,7 @@ const PREVIEW = new URLSearchParams(location.search).has("preview");
 const PREVIEW_STATUS = {
   enabled: true,
   configured: true,
+  routeMode: "selected",
   useCommunityList: true,
   communityCount: 1687,
   activeCount: 1692,
@@ -16,8 +17,8 @@ const PREVIEW_STATUS = {
   activeServer: { id: "server-1", name: "Нидерланды", protocolLabel: "HTTPS", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
   updateNotice: {
     kind: "installed",
-    version: "0.4.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.4.0"
+    version: "0.6.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.6.0"
   }
 };
 
@@ -31,7 +32,9 @@ async function send(type, payload = {}) {
     if (type === "setEnabled") PREVIEW_STATUS.enabled = payload.enabled;
     if (type === "toggleDomain") PREVIEW_STATUS.currentRouted = !PREVIEW_STATUS.currentRouted;
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
+    if (type === "setRouteMode") PREVIEW_STATUS.routeMode = payload.routeMode;
     if (type === "selectServer") PREVIEW_STATUS.activeServerId = payload.id;
+    if (type === "probeLocation") return { ...PREVIEW_STATUS };
     if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
     return { ...PREVIEW_STATUS };
   }
@@ -71,12 +74,13 @@ function makeElement(tag, className, text = "") {
 
 function activeCopy(status) {
   const active = status.enabled && status.configured;
+  const modeCopy = status.routeMode === "all" ? "Весь интернет через VPN" : "Только выбранные сайты";
   return {
     active,
     eyebrow: status.configured ? (active ? "ЗАЩИТА АКТИВНА" : "НА ПАУЗЕ") : "НУЖНА НАСТРОЙКА",
     title: status.configured ? (active ? "VPN включён" : "VPN выключен") : "Настройте сервер",
     text: status.configured
-      ? (active ? "Только выбранные сайты" : "Все сайты подключаются напрямую")
+      ? (active ? modeCopy : "Все сайты подключаются напрямую")
       : "Откройте настройки"
   };
 }
@@ -85,13 +89,23 @@ function createServerSlide(server, status) {
   const copy = activeCopy(status);
   const slide = makeElement("article", `status-card server-slide${copy.active ? "" : " is-off"}`);
   slide.dataset.serverId = server.id;
+  const countryCode = String(server.countryCode || "").toLowerCase();
+  if (/^[a-z]{2}$/.test(countryCode)) {
+    slide.classList.add("has-country-backdrop");
+    const backdrop = makeElement("img", "country-backdrop");
+    backdrop.src = new URL(`../assets/flags/${countryCode}.svg`, location.href).href;
+    backdrop.alt = "";
+    backdrop.setAttribute("aria-hidden", "true");
+    slide.append(backdrop);
+  }
   const top = makeElement("div", "server-slide-top");
   const protocol = makeElement("span", "protocol-pill", server.protocolLabel || String(server.scheme || "HTTPS").toUpperCase());
-  const countryCode = String(server.countryCode || "").toLowerCase();
   const flag = /^[a-z]{2}$/.test(countryCode)
     ? makeElement("img", "country-flag country-flag-image")
     : makeElement("span", "country-flag", "🌐");
-  flag.title = server.countryName || "Страна определится после проверки";
+  const isActive = server.id === status.activeServerId;
+  const pendingLocation = isActive && !server.countryName;
+  flag.title = server.countryName || (pendingLocation ? "Определяем страну выхода" : "Страна определится при выборе");
   if (flag instanceof HTMLImageElement) {
     flag.src = new URL(`../assets/flags/${countryCode}.svg`, location.href).href;
     flag.alt = server.countryName ? `Флаг: ${server.countryName}` : "Флаг страны сервера";
@@ -113,11 +127,14 @@ function createServerSlide(server, status) {
     "",
     server.countryName
       ? `${server.countryName}${server.exitIp ? ` · ${server.exitIp}` : ""}`
-      : "Страна определится после проверки"
+      : pendingLocation ? "Определяем страну…" : "Страна определится при выборе"
   );
   serverInfo.append(serverName, locationText);
   const count = makeElement("div", "route-count");
-  count.append(makeElement("strong", "", status.activeCount.toLocaleString("ru-RU")), makeElement("span", "", "доменов через VPN"));
+  count.append(
+    makeElement("strong", "", status.routeMode === "all" ? "Весь интернет" : status.activeCount.toLocaleString("ru-RU")),
+    makeElement("span", "", status.routeMode === "all" ? "через VPN" : "доменов через VPN")
+  );
   slide.append(top, copyWrap, serverInfo, count);
   return slide;
 }
@@ -166,7 +183,19 @@ function render(status) {
   const active = status.enabled && status.configured;
   setSwitch($("#masterToggle"), active);
   setSwitch($("#communityToggle"), status.useCommunityList);
+  document.querySelectorAll(".route-mode-button").forEach((button) => {
+    const selected = button.dataset.routeMode === status.routeMode;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  const listPanel = document.querySelector(".list-panel");
+  const selectedMode = status.routeMode !== "all";
+  listPanel.classList.toggle("is-disabled", !selectedMode);
+  $("#communityToggle").disabled = !selectedMode;
   $("#communityLabel").textContent = `${status.communityCount.toLocaleString("ru-RU")} сайтов для России`;
+  $("#routeFooter").lastChild.textContent = status.routeMode === "all"
+    ? " Весь интернет идёт через VPN, кроме исключений"
+    : " Остальные сайты подключаются напрямую";
   renderServerDeck(status);
   renderUpdateNotice(status.updateNotice);
 
@@ -196,7 +225,16 @@ async function getActiveHost() {
 
 async function refresh() {
   currentHost = await getActiveHost();
-  render(await send("getStatus", { host: currentHost }));
+  let next = await send("getStatus", { host: currentHost });
+  render(next);
+  if (!PREVIEW && next.enabled && next.configured && !next.activeServer?.countryCode) {
+    try {
+      next = await send("probeLocation", { host: currentHost });
+      render(next);
+    } catch (error) {
+      showNotice("Не удалось определить страну. Повторим при следующем открытии.", "error");
+    }
+  }
 }
 
 $("#masterToggle").addEventListener("click", async () => {
@@ -228,6 +266,19 @@ $("#communityToggle").addEventListener("click", async () => {
   } catch (error) {
     showNotice(error.message, "error");
   }
+});
+
+document.querySelectorAll(".route-mode-button").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const routeMode = button.dataset.routeMode;
+    if (routeMode === currentStatus.routeMode) return;
+    try {
+      render(await send("setRouteMode", { routeMode, host: currentHost }));
+      showNotice(routeMode === "all" ? "Весь интернет пойдёт через VPN" : "VPN работает только для списка", "success");
+    } catch (error) {
+      showNotice(error.message, "error");
+    }
+  });
 });
 
 $("#serverTrack").addEventListener("scroll", () => {

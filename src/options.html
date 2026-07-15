@@ -3,22 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Настройка — Amnezia Split</title>
+    <title>Настройка — Routeva</title>
     <link rel="stylesheet" href="ui.css" />
   </head>
   <body class="options-page">
     <main class="options-shell">
       <header class="options-header">
         <div class="brand large">
-          <img src="../assets/icon-48.png" width="48" height="48" alt="" />
-          <div><strong>Amnezia Split</strong><span>VPN только для нужных сайтов</span></div>
+          <img src="../assets/icon-48.png?v=0.6.0" width="48" height="48" alt="" />
+          <div><strong>Routeva</strong><span>VPN и прокси по вашим правилам</span></div>
         </div>
         <div class="header-status"><span id="headerDot"></span><strong id="headerStatus">Настройка</strong></div>
       </header>
 
       <aside class="update-strip hidden" id="updateCard">
         <span class="update-dot"></span>
-        <strong id="updateText">Amnezia Split обновлён</strong>
+        <strong id="updateText">Routeva обновлена</strong>
         <a id="updateLink" href="#" target="_blank" rel="noreferrer">Что нового</a>
         <button id="dismissUpdate" type="button" aria-label="Скрыть уведомление">×</button>
       </aside>
@@ -26,48 +26,59 @@
       <section class="welcome">
         <span class="eyebrow">ПРОЩЕ НЕКУДА</span>
         <h1>Ваши серверы — в одном месте</h1>
-        <p>Выберите сервер, и сайты из списка пойдут через него. Всё остальное останется на обычном подключении.</p>
+        <p>Добавьте сервер вручную или по ссылке подписки, затем выберите: отправлять через VPN только нужные сайты или весь интернет.</p>
       </section>
 
       <section class="settings-card">
-        <div class="section-heading"><span class="step">1</span><div><h2>Серверы</h2><p>Пароли хранятся только в этом браузере</p></div></div>
+        <div class="section-heading"><span class="step">1</span><div><h2>Подключения</h2><p>Добавьте сервер вручную или вставьте ссылку подписки</p></div></div>
         <div class="server-toolbar">
           <label class="field server-picker"><span>Активный сервер</span><select id="serverSelect" aria-label="Активный сервер"></select></label>
           <button class="secondary-button" id="newServer" type="button">+ Добавить</button>
           <button class="danger-button" id="deleteServer" type="button">Удалить</button>
         </div>
-        <form id="connectionForm">
-          <div class="field-grid">
-            <label class="field wide"><span>Название</span><input id="serverName" name="name" type="text" autocomplete="off" placeholder="Например, Нидерланды" required /></label>
-            <label class="field"><span>Протокол</span><select id="proxyScheme" name="scheme"><option value="https">HTTPS</option><option value="http">HTTP</option><option value="socks5">SOCKS5</option><option value="socks4">SOCKS4</option></select></label>
-            <label class="field wide"><span>Сервер</span><input id="proxyHost" name="host" type="text" autocomplete="off" spellcheck="false" placeholder="proxy.example.com" required /></label>
-            <label class="field"><span>Порт</span><input id="proxyPort" name="port" type="number" min="1" max="65535" inputmode="numeric" required /></label>
-            <label class="field"><span>Логин · если нужен</span><input id="proxyUsername" name="username" type="text" autocomplete="username" /></label>
-            <label class="field password-field wide"><span>Пароль · если нужен</span><input id="proxyPassword" name="password" type="password" autocomplete="current-password" /><button id="showPassword" type="button">Показать</button></label>
+        <div class="connection-method-tabs" role="tablist" aria-label="Способ добавления подключения">
+          <button class="connection-method-tab active" data-connection-method="manual" type="button" role="tab" aria-selected="true">Сервер вручную</button>
+          <button class="connection-method-tab" data-connection-method="subscription" type="button" role="tab" aria-selected="false">Ссылка подписки</button>
+        </div>
+        <div class="connection-method-panel" id="manualConnectionPanel" role="tabpanel">
+          <form id="connectionForm">
+            <div class="field-grid">
+              <label class="field wide"><span>Название</span><input id="serverName" name="name" type="text" autocomplete="off" placeholder="Например, Нидерланды" required /></label>
+              <label class="field"><span>Протокол</span><select id="proxyScheme" name="scheme"><option value="https">HTTPS</option><option value="http">HTTP</option><option value="socks5">SOCKS5</option><option value="socks4">SOCKS4</option></select></label>
+              <label class="field wide"><span>Сервер</span><input id="proxyHost" name="host" type="text" autocomplete="off" spellcheck="false" placeholder="proxy.example.com" required /></label>
+              <label class="field"><span>Порт</span><input id="proxyPort" name="port" type="number" min="1" max="65535" inputmode="numeric" required /></label>
+              <label class="field"><span>Логин · если нужен</span><input id="proxyUsername" name="username" type="text" autocomplete="username" /></label>
+              <label class="field password-field wide"><span>Пароль · если нужен</span><input id="proxyPassword" name="password" type="password" autocomplete="current-password" /><button id="showPassword" type="button">Показать</button></label>
+            </div>
+            <button class="primary-button" id="saveAndTest" type="submit"><span>Сохранить и проверить</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
+            <div class="test-result hidden" id="testResult" role="status"></div>
+          </form>
+        </div>
+        <div class="connection-method-panel hidden" id="subscriptionConnectionPanel" role="tabpanel">
+          <form class="subscription-form" id="subscriptionForm">
+            <label class="field"><span>Название</span><input id="subscriptionName" type="text" placeholder="Например, Quattro Cloud" autocomplete="off" /></label>
+            <label class="field subscription-url"><span>Ссылка подписки</span><div class="input-action"><input id="subscriptionUrl" type="password" placeholder="https://provider.example/ваша-ссылка" autocomplete="off" spellcheck="false" required /><button id="showSubscriptionUrl" type="button">Показать</button></div></label>
+            <button class="primary-button compact" type="submit"><span>Добавить подписку</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
+          </form>
+          <p class="privacy-note">Ссылка и ключ сохраняются только в этом профиле браузера и не попадают в GitHub.</p>
+          <div class="subscription-list" id="subscriptionList"><span class="empty-state">Подписок пока нет</span></div>
+          <div class="protocol-guide">
+            <div><strong>Работает прямо</strong><span>HTTP · HTTPS · SOCKS4 · SOCKS5</span></div>
+            <div><strong>Через локальный клиент</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
+            <p>Расширение видит такие узлы в подписке, но браузер не умеет поднимать их туннель. Запустите Happ или Amnezia и добавьте их локальный SOCKS5-порт как сервер вручную.</p>
           </div>
-          <button class="primary-button" id="saveAndTest" type="submit"><span>Сохранить и проверить</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
-          <div class="test-result hidden" id="testResult" role="status"></div>
-        </form>
-      </section>
-
-      <section class="settings-card">
-        <div class="section-heading"><span class="step">2</span><div><h2>Подписки</h2><p>Как в Happ: вставьте HTTPS-ссылку, остальное расширение разберёт само</p></div></div>
-        <form class="subscription-form" id="subscriptionForm">
-          <label class="field"><span>Название</span><input id="subscriptionName" type="text" placeholder="Например, Quattro Cloud" autocomplete="off" /></label>
-          <label class="field subscription-url"><span>Ссылка подписки</span><div class="input-action"><input id="subscriptionUrl" type="password" placeholder="https://provider.example/ваша-ссылка" autocomplete="off" spellcheck="false" required /><button id="showSubscriptionUrl" type="button">Показать</button></div></label>
-          <button class="primary-button compact" type="submit"><span>Добавить подписку</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
-        </form>
-        <p class="privacy-note">Ссылка и ключ сохраняются только в этом профиле браузера и не попадают в GitHub.</p>
-        <div class="subscription-list" id="subscriptionList"><span class="empty-state">Подписок пока нет</span></div>
-        <div class="protocol-guide">
-          <div><strong>Работает прямо</strong><span>HTTP · HTTPS · SOCKS4 · SOCKS5</span></div>
-          <div><strong>Через локальный клиент</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
-          <p>Расширение видит такие узлы в подписке, но браузер не умеет поднимать их туннель. Запустите Happ или Amnezia и добавьте их локальный SOCKS5-порт как сервер выше.</p>
         </div>
       </section>
 
       <section class="settings-card">
-        <div class="section-heading"><span class="step">3</span><div><h2>Сайты</h2><p>Готовый список обновляется автоматически</p></div></div>
+        <div class="section-heading"><span class="step">2</span><div><h2>Маршрутизация</h2><p>Выберите режим VPN и настройте сайты-исключения</p></div></div>
+        <div class="setting-row mode-setting-row">
+          <div><strong>Режим VPN</strong><span id="routeModeMeta">Только сайты из списка</span></div>
+          <div class="route-mode options-route-mode" role="group" aria-label="Режим VPN">
+            <button class="route-mode-button active" data-route-mode="selected" type="button" aria-pressed="true">По списку</button>
+            <button class="route-mode-button" data-route-mode="all" type="button" aria-pressed="false">Весь интернет</button>
+          </div>
+        </div>
         <div class="setting-row">
           <div><strong>Список для России</strong><span id="listMeta">Загрузка…</span></div>
           <div class="row-actions"><button class="text-button" id="toggleDomains" type="button">Посмотреть домены</button><button class="text-button" id="refreshList" type="button">Обновить</button><button class="mini-toggle" id="optionsCommunityToggle" type="button" role="switch" aria-checked="true"><span></span></button></div>
@@ -90,7 +101,7 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Amnezia Split 0.4.0 · данные хранятся локально</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
+      <footer class="options-footer"><span>Routeva 0.6.0 · данные хранятся локально</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
     <script type="module" src="options.js"></script>

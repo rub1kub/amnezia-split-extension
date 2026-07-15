@@ -3,6 +3,7 @@ const PREVIEW = new URLSearchParams(location.search).has("preview");
 const PREVIEW_STATUS = {
   enabled: true,
   configured: true,
+  routeMode: "selected",
   useCommunityList: true,
   communityCount: 1687,
   communitySources: [
@@ -60,8 +61,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.4.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.4.0"
+    version: "0.6.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.6.0"
   }
 };
 let status = null;
@@ -71,6 +72,7 @@ let domainLimit = 100;
 async function send(type, payload = {}) {
   if (PREVIEW) {
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
+    if (type === "setRouteMode") PREVIEW_STATUS.routeMode = payload.routeMode;
     if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
     if (type === "deleteSubscription") {
       PREVIEW_STATUS.subscriptions = PREVIEW_STATUS.subscriptions.filter((item) => item.id !== payload.id);
@@ -84,6 +86,17 @@ async function send(type, payload = {}) {
 
 function setSwitch(element, checked) {
   element.setAttribute("aria-checked", String(Boolean(checked)));
+}
+
+function setConnectionMethod(method) {
+  const subscription = method === "subscription";
+  $("#manualConnectionPanel").classList.toggle("hidden", subscription);
+  $("#subscriptionConnectionPanel").classList.toggle("hidden", !subscription);
+  document.querySelectorAll(".connection-method-tab").forEach((button) => {
+    const selected = button.dataset.connectionMethod === method;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
 }
 
 function toast(text, kind = "success") {
@@ -314,6 +327,14 @@ function render(next) {
   $("#proxyUsername").value = server.username || "";
   $("#proxyPassword").value = server.password || "";
   $("#deleteServer").disabled = next.servers.length <= 1;
+  document.querySelectorAll(".options-route-mode .route-mode-button").forEach((button) => {
+    const selected = button.dataset.routeMode === next.routeMode;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  $("#routeModeMeta").textContent = next.routeMode === "all"
+    ? "Весь интернет через VPN, кроме исключений"
+    : "Только сайты из списка";
   setSwitch($("#optionsCommunityToggle"), next.useCommunityList);
   $("#listMeta").textContent = `${next.communityCount.toLocaleString("ru-RU")} доменов · ${
     next.communityUpdatedAt ? new Date(next.communityUpdatedAt).toLocaleDateString("ru-RU") : "не обновлялся"
@@ -387,6 +408,7 @@ $("#serverSelect").addEventListener("change", async (event) => {
 });
 
 $("#newServer").addEventListener("click", () => {
+  setConnectionMethod("manual");
   editingServerId = null;
   $("#serverName").value = `Сервер ${status.servers.length + 1}`;
   $("#proxyScheme").value = "https";
@@ -396,6 +418,23 @@ $("#newServer").addEventListener("click", () => {
   $("#proxyPassword").value = "";
   $("#serverName").focus();
   $("#testResult").className = "test-result hidden";
+});
+
+document.querySelectorAll(".connection-method-tab").forEach((button) => {
+  button.addEventListener("click", () => setConnectionMethod(button.dataset.connectionMethod));
+});
+
+document.querySelectorAll(".options-route-mode .route-mode-button").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const routeMode = button.dataset.routeMode;
+    if (routeMode === status.routeMode) return;
+    try {
+      render(await send("setRouteMode", { routeMode }));
+      toast(routeMode === "all" ? "Весь интернет пойдёт через VPN" : "Включён режим по списку");
+    } catch (error) {
+      toast(error.message, "error");
+    }
+  });
 });
 
 $("#showSubscriptionUrl").addEventListener("click", () => {
@@ -422,10 +461,6 @@ $("#subscriptionForm").addEventListener("submit", async (event) => {
   button.disabled = true;
   button.querySelector("span").textContent = "Читаю подписку…";
   try {
-    if (!PREVIEW) {
-      const granted = await chrome.permissions.request({ origins: [`${url.origin}/*`] });
-      if (!granted) throw new Error("Доступ к домену подписки не разрешён");
-    }
     render(await send("importSubscription", {
       subscription: {
         name: $("#subscriptionName").value.trim() || url.hostname,

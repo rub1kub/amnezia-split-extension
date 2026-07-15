@@ -1,4 +1,4 @@
-const HOST_ID = "amnezia-split-update-banner";
+const HOST_ID = "routeva-update-banner";
 
 function removeBanner() {
   document.getElementById(HOST_ID)?.remove();
@@ -6,8 +6,8 @@ function removeBanner() {
 
 function noticeText(notice) {
   return notice.kind === "installed"
-    ? `Amnezia Split обновлён до ${notice.version}`
-    : `Доступно обновление Amnezia Split ${notice.version}`;
+    ? `Routeva обновлена до ${notice.version}`
+    : `Доступно обновление Routeva ${notice.version}`;
 }
 
 function renderBanner(notice) {

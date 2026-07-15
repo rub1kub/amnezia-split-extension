@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { compareVersions, releaseUrl } from "../lib/version.js";
 
 test("compares dotted extension versions", () => {
@@ -13,4 +14,18 @@ test("builds a safe GitHub release URL", () => {
     releaseUrl("0.3.0"),
     "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.3.0"
   );
+});
+
+test("keeps release metadata aligned and avoids redundant host permissions", async () => {
+  const [manifest, pkg, release] = await Promise.all([
+    readFile(new URL("../manifest.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../release.json", import.meta.url), "utf8").then(JSON.parse)
+  ]);
+
+  assert.equal(manifest.version, pkg.version);
+  assert.equal(manifest.version, release.version);
+  assert.equal(release.url, releaseUrl(manifest.version));
+  assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
+  assert.equal("optional_host_permissions" in manifest, false);
 });
