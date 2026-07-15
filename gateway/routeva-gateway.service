@@ -1,0 +1,20 @@
+[Unit]
+Description=Routeva Gateway control API
+After=network-online.target routeva-mihomo.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/routeva-gateway/gateway.env
+ExecStart=/usr/bin/python3 /opt/routeva-gateway/routeva_gateway.py
+Restart=on-failure
+RestartSec=2
+User=root
+Group=root
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

@@ -5,7 +5,7 @@
 - Personally identifiable information: **No**
 - Health information: **No**
 - Financial and payment information: **No**
-- Authentication information: **Yes** — логин/пароль прокси и секретный токен в ссылке подписки; только локально и для заявленной функции.
+- Authentication information: **Yes** — логин/пароль прокси хранится локально; секретная ссылка подписки передаётся только на выбранный пользователем Routeva Gateway и хранится там для обновления.
 - Personal communications: **No**
 - Location: **Yes** — приблизительная страна по публичному IP активного прокси; только отображение пользователю и локальное хранение.
 - Web history: **No** — расширение применяет правила к доменам, но не собирает и не передаёт историю посещений.

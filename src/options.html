@@ -10,7 +10,7 @@
     <main class="options-shell">
       <header class="options-header">
         <div class="brand large">
-          <img src="../assets/icon-48.png?v=0.6.0" width="48" height="48" alt="" />
+          <img src="../assets/icon-48.png?v=0.7.0" width="48" height="48" alt="" />
           <div><strong>Routeva</strong><span>VPN и прокси по вашим правилам</span></div>
         </div>
         <div class="header-status"><span id="headerDot"></span><strong id="headerStatus">Настройка</strong></div>
@@ -36,6 +36,7 @@
           <button class="secondary-button" id="newServer" type="button">+ Добавить</button>
           <button class="danger-button" id="deleteServer" type="button">Удалить</button>
         </div>
+        <div class="companion-summary hidden" id="companionSummary" aria-hidden="true"></div>
         <div class="connection-method-tabs" role="tablist" aria-label="Способ добавления подключения">
           <button class="connection-method-tab active" data-connection-method="manual" type="button" role="tab" aria-selected="true">Сервер вручную</button>
           <button class="connection-method-tab" data-connection-method="subscription" type="button" role="tab" aria-selected="false">Ссылка подписки</button>
@@ -60,12 +61,12 @@
             <label class="field subscription-url"><span>Ссылка подписки</span><div class="input-action"><input id="subscriptionUrl" type="password" placeholder="https://provider.example/ваша-ссылка" autocomplete="off" spellcheck="false" required /><button id="showSubscriptionUrl" type="button">Показать</button></div></label>
             <button class="primary-button compact" type="submit"><span>Добавить подписку</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
           </form>
-          <p class="privacy-note">Ссылка и ключ сохраняются только в этом профиле браузера и не попадают в GitHub.</p>
+          <p class="privacy-note">Ссылка отправляется только на ваш Routeva Gateway, хранится на вашем сервере и не попадает в GitHub.</p>
           <div class="subscription-list" id="subscriptionList"><span class="empty-state">Подписок пока нет</span></div>
           <div class="protocol-guide">
-            <div><strong>Работает прямо</strong><span>HTTP · HTTPS · SOCKS4 · SOCKS5</span></div>
-            <div><strong>Через локальный клиент</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
-            <p>Расширение видит такие узлы в подписке, но браузер не умеет поднимать их туннель. Запустите Happ или Amnezia и добавьте их локальный SOCKS5-порт как сервер вручную.</p>
+            <div><strong>В браузере</strong><span>Один защищённый HTTPS-прокси</span></div>
+            <div><strong>На вашем Gateway</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
+            <p>Routeva Gateway автоматически загружает подписку и переключает туннель. Happ, Amnezia и другие программы на компьютере не требуются.</p>
           </div>
         </div>
       </section>
@@ -101,9 +102,9 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Routeva 0.6.0 · данные хранятся локально</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
+      <footer class="options-footer"><span>Routeva 0.7.0 · ваш Gateway, без программ на ПК</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
-    <script type="module" src="options.js"></script>
+    <script type="module" src="options.js?v=0.7.0.2"></script>
   </body>
 </html>

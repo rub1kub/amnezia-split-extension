@@ -29,3 +29,19 @@ test("keeps release metadata aligned and avoids redundant host permissions", asy
   assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
   assert.equal("optional_host_permissions" in manifest, false);
 });
+
+test("does not retain gateway subscription URLs in browser state", async () => {
+  const background = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+  const start = background.indexOf("function syncGatewayState");
+  const end = background.indexOf("async function migrateSubscriptionsToGateway");
+  assert.ok(start >= 0 && end > start);
+  const syncGatewayState = background.slice(start, end);
+  assert.match(syncGatewayState, /url:\s*""/);
+  assert.doesNotMatch(syncGatewayState, /subscriptionUrls|old\?\.url/);
+});
+
+test("keeps gateway node cards synchronized automatically", async () => {
+  const background = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+  assert.match(background, /create\("sync-routeva-gateway",\s*\{\s*periodInMinutes:\s*60\s*\}\)/);
+  assert.match(background, /alarm\.name === "sync-routeva-gateway"/);
+});

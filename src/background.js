@@ -14,10 +14,10 @@ import {
   countryName,
   DIRECT_PROXY_SCHEMES,
   normalizeCountryCode,
+  normalizeProtocol,
   normalizeProxyScheme,
   protocolLabel
 } from "../lib/proxy.js";
-import { parseSubscription, subscriptionNodeToServer } from "../lib/subscriptions.js";
 
 const COUNTRY_SERVICES = Object.freeze([
   Object.freeze({ url: "https://api.country.is/", ip: "ip", country: "country" }),
@@ -25,6 +25,7 @@ const COUNTRY_SERVICES = Object.freeze([
 ]);
 const INTERNAL_PROXY_DOMAINS = Object.freeze(COUNTRY_SERVICES.map((service) => new URL(service.url).hostname));
 const VERSION_FEED_URL = "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/release.json";
+const DEFAULT_GATEWAY_API_PORT = 18445;
 
 const DEFAULT_SERVER = Object.freeze({
   id: "server-1",
@@ -56,6 +57,7 @@ const DEFAULT_STATE = Object.freeze({
   activeServerId: DEFAULT_SERVER.id,
   servers: [DEFAULT_SERVER],
   subscriptions: [],
+  gateway: null,
   updateNotice: null,
   dismissedUpdateVersion: null,
   lastError: null
@@ -76,9 +78,10 @@ function normalizeServer(server = {}, fallbackId = "server-1", fallbackName = "�
     password: String(server.password || ""),
     scheme,
     protocol: String(server.protocol || scheme).trim().toLowerCase(),
-    source: server.source === "subscription" ? "subscription" : "manual",
+    source: ["subscription", "gateway"].includes(server.source) ? server.source : "manual",
     subscriptionId: server.subscriptionId ? String(server.subscriptionId) : null,
     sourceNodeKey: server.sourceNodeKey ? String(server.sourceNodeKey) : null,
+    gatewayNodeId: server.gatewayNodeId ? String(server.gatewayNodeId) : null,
     countryCode,
     countryName: String(server.countryName || (countryCode ? countryName(countryCode) : "")),
     exitIp: String(server.exitIp || "")
@@ -97,8 +100,26 @@ function normalizeSubscription(subscription = {}) {
     companionCount: Number(subscription.companionCount) || 0,
     protocols: [...(subscription.protocols ?? [])],
     nodes: [...(subscription.nodes ?? [])],
+    gatewayManaged: Boolean(subscription.gatewayManaged),
     lastError: subscription.lastError ? String(subscription.lastError) : null
   };
+}
+
+function normalizeGateway(gateway) {
+  if (!gateway?.apiUrl || !gateway?.proxyServerId) return null;
+  try {
+    const url = new URL(String(gateway.apiUrl));
+    if (url.protocol !== "https:") return null;
+    return {
+      enabled: gateway.enabled !== false,
+      apiUrl: url.href.replace(/\/$/, ""),
+      proxyServerId: String(gateway.proxyServerId),
+      connected: Boolean(gateway.connected),
+      lastSyncAt: gateway.lastSyncAt || null
+    };
+  } catch {
+    return null;
+  }
 }
 
 function mergeState(saved = {}) {
@@ -124,7 +145,8 @@ function mergeState(saved = {}) {
     communitySources: [...(saved.communitySources ?? [])],
     customDomains: [...(saved.customDomains ?? [])],
     bypassDomains: [...(saved.bypassDomains ?? [])],
-    subscriptions: (saved.subscriptions ?? []).map(normalizeSubscription)
+    subscriptions: (saved.subscriptions ?? []).map(normalizeSubscription),
+    gateway: normalizeGateway(saved.gateway)
   };
 }
 
@@ -169,8 +191,28 @@ async function initialize() {
       communityUpdatedAt: "2026-07-15T00:00:00.000Z"
     });
   }
+  const legacySubscriptions = state.subscriptions.filter((subscription) => subscription.url && !subscription.gatewayManaged);
+  const gatewayProxy = getGatewayProxyServer(state);
+  if (!state.gateway?.enabled
+    && legacySubscriptions.length
+    && gatewayProxy?.host === DEFAULT_SERVER.host
+    && isServerConfigured(gatewayProxy)) {
+    try {
+      state = await saveState(await migrateSubscriptionsToGateway(state, legacySubscriptions));
+    } catch (error) {
+      state = await saveState({ ...state, lastError: `Gateway: ${error.message}` });
+    }
+  } else if (state.gateway?.enabled) {
+    try {
+      const { payload, gateway } = await gatewayRequest(state, "/v1/status");
+      state = await saveState(syncGatewayState(state, payload, gateway));
+    } catch (error) {
+      state = await saveState({ ...state, lastError: `Gateway: ${error.message}` });
+    }
+  }
   await chrome.alarms.create("refresh-community-list", { periodInMinutes: 24 * 60 });
   await chrome.alarms.create("check-extension-update", { periodInMinutes: 6 * 60 });
+  await chrome.alarms.create("sync-routeva-gateway", { periodInMinutes: 60 });
   await applyProxy(state);
   const updatedAt = state.communityUpdatedAt ? new Date(state.communityUpdatedAt).getTime() : 0;
   const needsSources = state.communitySources.length < DOMAIN_SOURCES.length;
@@ -412,6 +454,26 @@ async function selectServer(id) {
   const state = await getState();
   const server = state.servers.find((item) => item.id === id);
   if (!server) throw new Error("Сервер не найден");
+  if (server.source === "gateway" || (state.gateway?.enabled && id === state.gateway.proxyServerId)) {
+    const nodeName = server.source === "gateway" ? server.sourceNodeKey : "DIRECT";
+    const { payload, gateway } = await gatewayRequest(state, "/v1/nodes/select", {
+      method: "PUT",
+      body: { name: nodeName }
+    });
+    const synced = syncGatewayState(state, payload, gateway);
+    const selected = synced.servers.find((item) => item.source === "gateway" && item.sourceNodeKey === nodeName)
+      || synced.servers.find((item) => item.id === gateway.proxyServerId)
+      || synced.servers[0];
+    const next = await saveState({
+      ...synced,
+      activeServerId: selected.id,
+      configured: isServerConfigured(selected),
+      lastError: null
+    });
+    await applyProxy(next);
+    const located = await probeActiveServerLocation(next).catch(() => next);
+    return getPublicStatus(null, located, true);
+  }
   const next = await saveState({
     ...state,
     activeServerId: server.id,
@@ -535,9 +597,171 @@ function subscriptionSummary(subscription, includeUrl = false) {
     companionCount: subscription.companionCount,
     protocols: subscription.protocols,
     nodes: subscription.nodes,
+    gatewayManaged: subscription.gatewayManaged,
     lastError: subscription.lastError,
     ...(includeUrl ? { url: subscription.url } : {})
   };
+}
+
+function getGatewayProxyServer(state) {
+  const configured = state.gateway?.proxyServerId
+    ? state.servers.find((server) => server.id === state.gateway.proxyServerId && server.source === "manual")
+    : null;
+  return configured
+    || state.servers.find((server) => server.source === "manual" && server.host !== "127.0.0.1")
+    || state.servers.find((server) => server.source === "manual")
+    || null;
+}
+
+function inferredGateway(state) {
+  const proxyServer = getGatewayProxyServer(state);
+  if (!proxyServer) throw new Error("Сначала настройте основной HTTPS-прокси Routeva");
+  return {
+    enabled: true,
+    apiUrl: `https://${proxyServer.host}:${DEFAULT_GATEWAY_API_PORT}`,
+    proxyServerId: proxyServer.id,
+    connected: false,
+    lastSyncAt: null
+  };
+}
+
+function basicAuthorization(username, password) {
+  const bytes = new TextEncoder().encode(`${username}:${password}`);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `Basic ${btoa(binary)}`;
+}
+
+async function gatewayRequest(state, path, { method = "GET", body = null, gateway = null } = {}) {
+  const controller = normalizeGateway(gateway || state.gateway) || inferredGateway(state);
+  const proxyServer = state.servers.find((server) => server.id === controller.proxyServerId)
+    || getGatewayProxyServer(state);
+  if (!proxyServer?.username || !proxyServer?.password) {
+    throw new Error("Для Routeva Gateway нужны логин и пароль основного сервера");
+  }
+  const response = await fetch(`${controller.apiUrl}${path}`, {
+    method,
+    cache: "no-store",
+    headers: {
+      Authorization: basicAuthorization(proxyServer.username, proxyServer.password),
+      ...(body ? { "Content-Type": "application/json" } : {})
+    },
+    body: body ? JSON.stringify(body) : null,
+    signal: AbortSignal.timeout(method === "POST" ? 65000 : 30000)
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    // The error below remains understandable if a reverse proxy returned HTML.
+  }
+  if (!response.ok) {
+    throw new Error(payload?.error || `Routeva Gateway ответил HTTP ${response.status}`);
+  }
+  return { payload, gateway: controller };
+}
+
+function syncGatewayState(state, gatewayStatus, controller) {
+  const proxyServer = state.servers.find((server) => server.id === controller.proxyServerId)
+    || getGatewayProxyServer(state);
+  if (!proxyServer) throw new Error("Основной прокси Routeva не найден");
+  const oldGatewayServers = state.servers.filter((server) => server.source === "gateway");
+  const oldByNode = new Map(oldGatewayServers.map((server) => [
+    `${server.subscriptionId}\0${server.sourceNodeKey}`,
+    server
+  ]));
+  const manualServers = state.servers.filter((server) => server.source === "manual");
+  const gatewayServers = (gatewayStatus.nodes || []).map((node) => {
+    const nodeKey = String(node.key || node.name);
+    const key = `${node.subscriptionId}\0${nodeKey}`;
+    const old = oldByNode.get(key);
+    return normalizeServer({
+      id: `gateway:${node.id}`,
+      name: node.name,
+      host: proxyServer.host,
+      port: proxyServer.port,
+      username: proxyServer.username,
+      password: proxyServer.password,
+      scheme: proxyServer.scheme,
+      protocol: normalizeProtocol(node.protocol),
+      source: "gateway",
+      subscriptionId: node.subscriptionId,
+      sourceNodeKey: nodeKey,
+      gatewayNodeId: node.id,
+      countryCode: old?.countryCode || "",
+      countryName: old?.countryName || "",
+      exitIp: old?.exitIp || ""
+    });
+  });
+  const oldSubscriptions = new Map(state.subscriptions.map((item) => [item.id, item]));
+  const subscriptions = (gatewayStatus.subscriptions || []).map((item) => {
+    const old = oldSubscriptions.get(item.id);
+    const nodes = (item.nodes || []).map((node) => ({
+      name: node.name,
+      protocol: normalizeProtocol(node.protocol),
+      protocolLabel: protocolLabel(node.protocol),
+      compatible: true,
+      requiresCompanion: false
+    }));
+    return normalizeSubscription({
+      id: item.id,
+      name: item.name,
+      url: "",
+      origin: item.origin || old?.origin || "",
+      updatedAt: item.updatedAt,
+      nodeCount: item.nodeCount,
+      compatibleCount: item.nodeCount,
+      companionCount: 0,
+      protocols: item.protocols || [],
+      nodes,
+      gatewayManaged: true,
+      lastError: null
+    });
+  });
+  const selectedServer = gatewayServers.find((server) => server.sourceNodeKey === gatewayStatus.selected);
+  const activeServerId = selectedServer?.id || proxyServer.id;
+  return {
+    ...state,
+    gateway: {
+      ...controller,
+      enabled: true,
+      connected: true,
+      lastSyncAt: new Date().toISOString()
+    },
+    servers: [...manualServers, ...gatewayServers],
+    subscriptions,
+    activeServerId,
+    configured: isServerConfigured(selectedServer || proxyServer),
+    enabled: true,
+    lastError: null
+  };
+}
+
+async function migrateSubscriptionsToGateway(state, subscriptions) {
+  const controller = inferredGateway(state);
+  let gatewayStatus = null;
+  for (const subscription of subscriptions) {
+    const result = await gatewayRequest(state, "/v1/subscriptions", {
+      method: "POST",
+      body: {
+        id: subscription.id,
+        name: subscription.name,
+        url: subscription.url
+      },
+      gateway: controller
+    });
+    gatewayStatus = result.payload;
+  }
+  if (!gatewayStatus) return state;
+  return syncGatewayState(state, gatewayStatus, controller);
+}
+
+async function connectSubscription(id) {
+  const state = await getState();
+  const subscription = state.subscriptions.find((item) => item.id === id);
+  if (!subscription) throw new Error("Подписка не найдена");
+  if (!subscription.url) throw new Error("У подписки не сохранена ссылка — добавьте её заново");
+  return importSubscription({ id, name: subscription.name, url: subscription.url });
 }
 
 async function importSubscription(input = {}) {
@@ -549,99 +773,53 @@ async function importSubscription(input = {}) {
     throw new Error("Введите корректную HTTPS-ссылку подписки");
   }
   if (url.protocol !== "https:") throw new Error("Подписка должна использовать HTTPS");
-  const response = await fetch(url.href, {
-    cache: "no-store",
-    redirect: "follow",
-    signal: AbortSignal.timeout(15000)
+  const existing = state.subscriptions.find((item) => item.id === input.id || item.url === url.href);
+  const id = existing?.id || input.id || crypto.randomUUID();
+  const controller = normalizeGateway(state.gateway) || inferredGateway(state);
+  const { payload, gateway } = await gatewayRequest(state, "/v1/subscriptions", {
+    method: "POST",
+    body: {
+      id,
+      name: String(input.name || existing?.name || url.hostname).trim(),
+      url: url.href
+    },
+    gateway: controller
   });
-  if (!response.ok) throw new Error(`Подписка ответила HTTP ${response.status}`);
-  const length = Number(response.headers.get("content-length")) || 0;
-  if (length > 2_000_000) throw new Error("Подписка больше 2 МБ");
-  const text = await response.text();
-  if (text.length > 2_000_000) throw new Error("Подписка больше 2 МБ");
-  const parsed = parseSubscription(text);
-  if (!parsed.nodes.length) throw new Error("В подписке не найдено поддерживаемых форматов");
-
-  const existing = state.subscriptions.find((item) => item.id === input.id);
-  const id = existing?.id || crypto.randomUUID();
-  const oldServers = state.servers.filter((server) => server.subscriptionId === id);
-  const oldIdsByKey = new Map(oldServers.map((server) => [server.sourceNodeKey, server.id]));
-  const importedServers = parsed.nodes
-    .map((node) => subscriptionNodeToServer(node, id, oldIdsByKey.get(node.key) || crypto.randomUUID()))
-    .filter(Boolean)
-    .map(normalizeServer);
-  let servers = [
-    ...state.servers.filter((server) => server.subscriptionId !== id),
-    ...importedServers
-  ];
-  if (!servers.length) servers = [normalizeServer(DEFAULT_SERVER)];
-
-  const activeStillExists = servers.some((server) => server.id === state.activeServerId);
-  const activeServerId = activeStillExists
-    ? state.activeServerId
-    : importedServers[0]?.id || servers[0].id;
-  const subscription = normalizeSubscription({
-    id,
-    name: String(input.name || existing?.name || url.hostname).trim(),
-    url: url.href,
-    origin: url.origin,
-    updatedAt: new Date().toISOString(),
-    nodeCount: parsed.nodes.length,
-    compatibleCount: parsed.compatibleCount,
-    companionCount: parsed.companionCount,
-    protocols: parsed.protocols,
-    nodes: parsed.nodes.map((node) => ({
-      name: node.name,
-      protocol: node.protocol,
-      protocolLabel: node.protocolLabel,
-      host: node.host,
-      port: node.port,
-      compatible: node.compatible,
-      requiresCompanion: node.requiresCompanion
-    })),
-    lastError: null
-  });
-  const subscriptions = existing
-    ? state.subscriptions.map((item) => item.id === id ? subscription : item)
-    : [...state.subscriptions, subscription];
-  const activeServer = servers.find((server) => server.id === activeServerId) || servers[0];
-  const next = await saveState({
-    ...state,
-    servers,
-    subscriptions,
-    activeServerId: activeServer.id,
-    configured: isServerConfigured(activeServer),
-    lastError: null
-  });
+  const next = await saveState(syncGatewayState(state, payload, gateway));
   await applyProxy(next);
-  return getPublicStatus(null, next, true);
+  const located = await probeActiveServerLocation(next).catch(() => next);
+  return getPublicStatus(null, located, true);
 }
 
 async function refreshSubscription(id) {
   const state = await getState();
   const subscription = state.subscriptions.find((item) => item.id === id);
   if (!subscription) throw new Error("Подписка не найдена");
-  return importSubscription({ id, name: subscription.name, url: subscription.url });
+  if (!state.gateway?.enabled) return connectSubscription(id);
+  const { payload, gateway } = await gatewayRequest(state, `/v1/subscriptions/${encodeURIComponent(id)}/refresh`, {
+    method: "PUT"
+  });
+  const next = await saveState(syncGatewayState(state, payload, gateway));
+  await applyProxy(next);
+  return getPublicStatus(null, next, true);
 }
 
 async function deleteSubscription(id) {
   const state = await getState();
-  let servers = state.servers.filter((server) => server.subscriptionId !== id);
-  if (!servers.length) servers = [normalizeServer(DEFAULT_SERVER)];
-  const subscriptions = state.subscriptions.filter((item) => item.id !== id);
-  const activeServer = servers.some((server) => server.id === state.activeServerId)
-    ? servers.find((server) => server.id === state.activeServerId)
-    : servers[0];
-  const next = await saveState({
-    ...state,
-    servers,
-    subscriptions,
-    activeServerId: activeServer.id,
-    configured: isServerConfigured(activeServer),
-    lastError: null
+  if (!state.subscriptions.some((item) => item.id === id)) throw new Error("Подписка не найдена");
+  const { payload, gateway } = await gatewayRequest(state, `/v1/subscriptions/${encodeURIComponent(id)}`, {
+    method: "DELETE"
   });
+  const next = await saveState(syncGatewayState(state, payload, gateway));
   await applyProxy(next);
   return getPublicStatus(null, next, true);
+}
+
+async function syncRoutevaGateway() {
+  const state = await getState();
+  if (!state.gateway?.enabled) return;
+  const { payload, gateway } = await gatewayRequest(state, "/v1/status");
+  await saveState(syncGatewayState(state, payload, gateway));
 }
 
 function getPublicStatus(host, state, includeCredentials = false, includeDomains = false) {
@@ -667,6 +845,7 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
         hasPassword: Boolean(server.password),
         source: server.source,
         subscriptionId: server.subscriptionId,
+        gatewayNodeId: server.gatewayNodeId,
         countryCode: server.countryCode,
         countryName: server.countryName,
         flag: countryFlag(server.countryCode),
@@ -692,9 +871,17 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
     activeServerId: activeServer.id,
     activeServer: exposeServer(activeServer),
     servers: state.servers.map(exposeServer),
-    subscriptions: state.subscriptions.map((subscription) =>
-      subscriptionSummary(subscription, includeCredentials)
-    ),
+    subscriptionCards: [],
+    gateway: state.gateway ? {
+      enabled: state.gateway.enabled,
+      connected: state.gateway.connected,
+      apiUrl: state.gateway.apiUrl,
+      proxyServerId: state.gateway.proxyServerId,
+      lastSyncAt: state.gateway.lastSyncAt
+    } : null,
+    subscriptions: includeCredentials
+      ? state.subscriptions.map((subscription) => subscriptionSummary(subscription, true))
+      : [],
     supportedProxySchemes: Object.entries(DIRECT_PROXY_SCHEMES).map(([id, item]) => ({
       id,
       label: item.label
@@ -751,6 +938,8 @@ async function handleMessage(message) {
       return deleteServer(String(message.id ?? ""));
     case "importSubscription":
       return importSubscription(message.subscription ?? {});
+    case "connectSubscription":
+      return connectSubscription(String(message.id ?? ""));
     case "refreshSubscription":
       return refreshSubscription(String(message.id ?? ""));
     case "deleteSubscription":
@@ -848,6 +1037,7 @@ chrome.runtime.onStartup.addListener(initialize);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "refresh-community-list") updateCommunityList().catch(() => {});
   if (alarm.name === "check-extension-update") checkForExtensionUpdate().catch(() => {});
+  if (alarm.name === "sync-routeva-gateway") syncRoutevaGateway().catch(() => {});
 });
 
 initialize().catch(async (error) => {

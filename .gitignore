@@ -1,6 +1,9 @@
 dist/
 node_modules/
 .tools/
+__pycache__/
+*.py[cod]
+artifacts/audit/
 .env
 *.key
 *.pem

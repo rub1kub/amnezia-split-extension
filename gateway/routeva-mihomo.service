@@ -1,0 +1,19 @@
+[Unit]
+Description=Routeva dedicated Mihomo tunnel engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/routeva-mihomo -d /etc/routeva-gateway/mihomo
+Restart=on-failure
+RestartSec=2
+User=root
+Group=root
+UMask=0077
+LimitNOFILE=1048576
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

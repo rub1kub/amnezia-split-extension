@@ -1,30 +1,51 @@
-# Серверный маршрут
+# Серверный маршрут Routeva
 
-Текущая схема не меняет контейнеры Amnezia и не занимает их порты.
+Routeva не требует Happ, Amnezia, Xray или другого VPN-клиента на компьютере.
+Chrome/Brave подключается к обычному HTTPS-прокси, а протоколы подписки
+запускаются на сервере пользователя.
 
 ```text
 Chrome/Brave
-  └─ HTTPS proxy (TLS 1.2+) — ton4.pro:18443
-       └─ stunnel — 127.0.0.1:18444
-            └─ tinyproxy + BasicAuth
-                 └─ интернет с IP VPN-сервера
+  └─ PAC: выбранные домены или весь интернет
+      └─ HTTPS proxy · ton4.pro:18443
+          └─ stunnel · 127.0.0.1:18444
+              └─ tinyproxy + BasicAuth
+                  └─ Routeva Mihomo · 127.0.0.1:18447
+                      └─ выбранный VLESS / Hysteria2 / Shadowsocks / другой узел
+
+Расширение
+  └─ HTTPS API · ton4.pro:18445
+      └─ stunnel · 127.0.0.1:18446
+          └─ Routeva Gateway
+              └─ Mihomo controller · 127.0.0.1:18448
 ```
 
-## Развёрнутые компоненты
+## Изоляция
 
-- `stunnel4` принимает только TLS 1.2+ на TCP 18443;
-- сертификат Let’s Encrypt берётся из `/etc/letsencrypt/live/ton4.pro/`;
-- deploy-hook перезагружает stunnel после обновления сертификата;
-- `tinyproxy` слушает только `127.0.0.1:18444` и недоступен напрямую извне;
-- отдельные данные BasicAuth не совпадают с root-доступом к серверу;
-- файл восстановления реквизитов доступен только root на самом сервере.
+- существующий системный `mihomo.service` и его конфигурация не изменяются;
+- Routeva использует отдельный `routeva-mihomo.service` и отдельный каталог;
+- порты `18446`, `18447` и `18448` слушают только loopback;
+- наружу открыты только TLS-порты прокси `18443` и API `18445`;
+- API использует Basic Auth с данными основного прокси;
+- внутренний Mihomo controller защищён отдельным случайным секретом;
+- подписки, токены и сгенерированные provider-файлы имеют права `0600` и не входят в Git.
+
+## Компоненты
+
+- `/opt/routeva-gateway/routeva_gateway.py` — API импорта, обновления и выбора узла;
+- `/etc/routeva-gateway/gateway.env` — API-учётные данные и внутренний секрет;
+- `/etc/routeva-gateway/state.json` — персональные ссылки подписок;
+- `/etc/routeva-gateway/mihomo/config.yaml` — генерируемая конфигурация туннеля;
+- `routeva-gateway.service` — управляющий API;
+- `routeva-mihomo.service` — отдельный протокольный движок.
 
 ## Диагностика
 
 ```bash
-systemctl status stunnel4 tinyproxy
-ss -lntp | grep -E ':(18443|18444)'
-curl --proxy https://ton4.pro:18443 --proxy-user 'USER:PASSWORD' https://api.ipify.org
+systemctl status routeva-gateway routeva-mihomo stunnel4 tinyproxy
+ss -lntp | grep -E ':(18443|18445|18446|18447|18448)'
+journalctl -u routeva-gateway -u routeva-mihomo --since '-15 min'
 ```
 
-Не добавляйте пароль прокси, SSH-пароль, приватные ключи или содержимое `/root/amnezia-browser-proxy-credentials` в Git.
+Не добавляйте в Git SSH-пароль, логин/пароль прокси, `gateway.env`,
+`state.json`, provider-файлы или персональные ссылки подписок.

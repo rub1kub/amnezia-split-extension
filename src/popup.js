@@ -11,14 +11,15 @@ const PREVIEW_STATUS = {
   currentRouted: true,
   activeServerId: "server-1",
   servers: [
-    { id: "server-1", name: "Нидерланды", protocolLabel: "HTTPS", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
-    { id: "server-2", name: "Happ · Германия", protocolLabel: "SOCKS5", countryCode: "DE", countryName: "Германия", flag: "🇩🇪", exitIp: "198.51.100.24" }
+    { id: "server-1", name: "Основной сервер", protocolLabel: "HTTPS", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
+    { id: "gateway-node-1", name: "🇩🇪 Германия · Hysteria 2", protocolLabel: "Hysteria 2", countryCode: "DE", countryName: "Германия", flag: "🇩🇪", exitIp: "198.51.100.25", source: "gateway" }
   ],
-  activeServer: { id: "server-1", name: "Нидерланды", protocolLabel: "HTTPS", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
+  activeServer: { id: "server-1", name: "Основной сервер", protocolLabel: "HTTPS", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
+  subscriptionCards: [],
   updateNotice: {
     kind: "installed",
-    version: "0.6.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.6.0"
+    version: "0.7.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.0"
   }
 };
 
@@ -26,6 +27,7 @@ let currentHost = "";
 let currentStatus = null;
 let carouselTimer = null;
 let renderingCarousel = false;
+let currentDeckItems = [];
 
 async function send(type, payload = {}) {
   if (PREVIEW) {
@@ -33,7 +35,10 @@ async function send(type, payload = {}) {
     if (type === "toggleDomain") PREVIEW_STATUS.currentRouted = !PREVIEW_STATUS.currentRouted;
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
     if (type === "setRouteMode") PREVIEW_STATUS.routeMode = payload.routeMode;
-    if (type === "selectServer") PREVIEW_STATUS.activeServerId = payload.id;
+    if (type === "selectServer") {
+      PREVIEW_STATUS.activeServerId = payload.id;
+      PREVIEW_STATUS.activeServer = PREVIEW_STATUS.servers.find((item) => item.id === payload.id) || PREVIEW_STATUS.activeServer;
+    }
     if (type === "probeLocation") return { ...PREVIEW_STATUS };
     if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
     return { ...PREVIEW_STATUS };
@@ -70,6 +75,35 @@ function makeElement(tag, className, text = "") {
   if (className) element.className = className;
   if (text) element.textContent = text;
   return element;
+}
+
+function requireStatus() {
+  if (currentStatus) return true;
+  showNotice("Routeva ещё запускается — подождите секунду", "info");
+  return false;
+}
+
+function protocolLabel(protocol) {
+  return {
+    vless: "VLESS",
+    vmess: "VMess",
+    trojan: "Trojan",
+    ss: "Shadowsocks",
+    hysteria2: "Hysteria 2",
+    tuic: "TUIC",
+    wireguard: "WireGuard",
+    amneziawg: "AmneziaWG"
+  }[protocol] || String(protocol || "").toUpperCase();
+}
+
+function openSubscriptionSetup(subscriptionId) {
+  const target = `options.html?connect=${encodeURIComponent(subscriptionId)}`;
+  if (PREVIEW) {
+    location.href = `${target}&preview=1`;
+    return;
+  }
+  chrome.tabs.create({ url: chrome.runtime.getURL(`src/${target}`) });
+  window.close();
 }
 
 function activeCopy(status) {
@@ -139,6 +173,26 @@ function createServerSlide(server, status) {
   return slide;
 }
 
+function createSubscriptionSlide(subscription) {
+  const slide = makeElement("article", "status-card server-slide subscription-slide");
+  slide.dataset.subscriptionId = subscription.subscriptionId;
+  const copyWrap = makeElement("div", "status-copy");
+  copyWrap.append(
+    makeElement("span", "eyebrow", "ПОДПИСКА ДОБАВЛЕНА"),
+    makeElement("h1", "", subscription.name),
+    makeElement("p", "", `${subscription.nodeCount.toLocaleString("ru-RU")} узлов готовы на Routeva Gateway`)
+  );
+  const protocols = makeElement("div", "subscription-slide-protocols");
+  (subscription.protocols || []).slice(0, 3).forEach((protocol) => {
+    protocols.append(makeElement("span", "", protocolLabel(protocol)));
+  });
+  const button = makeElement("button", "subscription-slide-action", "Открыть подписку →");
+  button.type = "button";
+  button.addEventListener("click", () => openSubscriptionSetup(subscription.subscriptionId));
+  slide.append(copyWrap, protocols, button);
+  return slide;
+}
+
 function closestSlideIndex() {
   const track = $("#serverTrack");
   const slides = [...track.children];
@@ -153,17 +207,28 @@ function updateCarouselMeta(index) {
   const dots = [...$("#serverDots").children];
   dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
   $("#serverPosition").textContent = `${index + 1} из ${Math.max(1, dots.length)} · листайте карточку`;
+  const showingSubscription = currentDeckItems[index]?.kind === "subscription";
+  $("#masterToggle").classList.toggle("hidden", showingSubscription);
+  $("#serverDeck").classList.toggle("showing-subscription", showingSubscription);
 }
 
 function renderServerDeck(status) {
   const track = $("#serverTrack");
   renderingCarousel = true;
-  track.replaceChildren(...status.servers.map((server) => createServerSlide(server, status)));
+  currentDeckItems = [
+    ...status.servers.map((server) => ({ ...server, kind: "server", selectable: true })),
+    ...(status.subscriptionCards || [])
+  ];
+  track.replaceChildren(...currentDeckItems.map((item) => item.kind === "subscription"
+    ? createSubscriptionSlide(item)
+    : createServerSlide(item, status)));
   const dots = $("#serverDots");
-  dots.replaceChildren(...status.servers.map((server, index) => {
+  dots.replaceChildren(...currentDeckItems.map((item, index) => {
     const dot = makeElement("button", "server-dot");
     dot.type = "button";
-    dot.setAttribute("aria-label", `Выбрать сервер ${server.name}`);
+    dot.setAttribute("aria-label", item.kind === "subscription"
+      ? `Открыть подписку ${item.name}`
+      : `Выбрать сервер ${item.name}`);
     dot.addEventListener("click", () => {
       track.children[index]?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
     });
@@ -238,6 +303,7 @@ async function refresh() {
 }
 
 $("#masterToggle").addEventListener("click", async () => {
+  if (!requireStatus()) return;
   if (!currentStatus.configured) {
     await chrome.runtime.openOptionsPage();
     return;
@@ -250,6 +316,7 @@ $("#masterToggle").addEventListener("click", async () => {
 });
 
 $("#siteToggle").addEventListener("click", async () => {
+  if (!requireStatus()) return;
   if (!currentHost) return;
   try {
     render(await send("toggleDomain", { host: currentHost }));
@@ -260,6 +327,7 @@ $("#siteToggle").addEventListener("click", async () => {
 });
 
 $("#communityToggle").addEventListener("click", async () => {
+  if (!requireStatus()) return;
   try {
     await send("setCommunityList", { enabled: !currentStatus.useCommunityList });
     await refresh();
@@ -270,6 +338,7 @@ $("#communityToggle").addEventListener("click", async () => {
 
 document.querySelectorAll(".route-mode-button").forEach((button) => {
   button.addEventListener("click", async () => {
+    if (!requireStatus()) return;
     const routeMode = button.dataset.routeMode;
     if (routeMode === currentStatus.routeMode) return;
     try {
@@ -285,10 +354,11 @@ $("#serverTrack").addEventListener("scroll", () => {
   if (renderingCarousel) return;
   clearTimeout(carouselTimer);
   carouselTimer = setTimeout(async () => {
+    if (!currentStatus) return;
     const index = closestSlideIndex();
     updateCarouselMeta(index);
-    const server = currentStatus?.servers?.[index];
-    if (!server || server.id === currentStatus.activeServerId) return;
+    const server = currentDeckItems[index];
+    if (!server || server.kind !== "server" || server.id === currentStatus.activeServerId) return;
     try {
       render(await send("selectServer", { id: server.id }));
       showNotice(`Выбран: ${server.name}`, "success");
@@ -299,6 +369,7 @@ $("#serverTrack").addEventListener("scroll", () => {
 }, { passive: true });
 
 $("#dismissUpdate").addEventListener("click", async () => {
+  if (!requireStatus()) return;
   try {
     await send("dismissUpdateNotice");
     currentStatus.updateNotice = null;

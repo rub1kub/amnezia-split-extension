@@ -30,24 +30,31 @@ const PREVIEW_STATUS = {
     exitIp: "203.0.113.10"
   },
   servers: [
-    { id: "server-1", name: "Нидерланды", host: "ton4.pro", port: 18443, scheme: "https", protocolLabel: "HTTPS", username: "amnezia-browser", password: "", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
-    { id: "server-2", name: "Happ · Германия", host: "127.0.0.1", port: 1080, scheme: "socks5", protocolLabel: "SOCKS5", username: "", password: "", countryCode: "DE", countryName: "Германия", flag: "🇩🇪", exitIp: "198.51.100.24" }
+    { id: "server-1", name: "Основной сервер", host: "ton4.pro", port: 18443, scheme: "https", protocolLabel: "HTTPS", username: "amnezia-browser", password: "", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10", source: "manual" },
+    { id: "gateway-node-1", name: "🇪🇺 Авто · Самый быстрый", host: "ton4.pro", port: 18443, scheme: "https", protocolLabel: "VLESS", username: "amnezia-browser", password: "", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.11", source: "gateway", subscriptionId: "sub-1" },
+    { id: "gateway-node-2", name: "🇩🇪 Германия · Hysteria 2", host: "ton4.pro", port: 18443, scheme: "https", protocolLabel: "Hysteria 2", username: "amnezia-browser", password: "", countryCode: "DE", countryName: "Германия", flag: "🇩🇪", exitIp: "198.51.100.25", source: "gateway", subscriptionId: "sub-1" }
   ],
+  gateway: { enabled: true, connected: true, apiUrl: "https://ton4.pro:18445", proxyServerId: "server-1" },
   subscriptions: [{
     id: "sub-1",
-    name: "Пример подписки",
+    name: "Quattro",
     origin: "https://provider.example",
     url: "https://provider.example/private-token",
     updatedAt: "2026-07-15T12:00:00.000Z",
-    nodeCount: 4,
-    compatibleCount: 2,
-    companionCount: 2,
-    protocols: ["socks5", "https", "vless", "trojan"],
+    nodeCount: 285,
+    compatibleCount: 285,
+    companionCount: 0,
+    gatewayManaged: true,
+    protocols: ["hysteria2", "ss", "vless"],
     nodes: [
-      { name: "Happ Local", protocolLabel: "SOCKS5", compatible: true },
-      { name: "Amsterdam", protocolLabel: "HTTPS", compatible: true },
-      { name: "Berlin VLESS", protocolLabel: "VLESS", compatible: false },
-      { name: "Warsaw Trojan", protocolLabel: "Trojan", compatible: false }
+      { name: "EU Auto | Самый быстрый", protocolLabel: "VLESS", compatible: true },
+      { name: "LTE Auto · Нидерланды", protocolLabel: "VLESS", compatible: true },
+      { name: "LTE Auto · Великобритания", protocolLabel: "VLESS", compatible: true },
+      { name: "LTE Auto · Швеция", protocolLabel: "VLESS", compatible: true },
+      { name: "LTE Auto · Германия", protocolLabel: "VLESS", compatible: true },
+      { name: "LTE Auto · Латвия", protocolLabel: "VLESS", compatible: true },
+      { name: "Бельгия", protocolLabel: "VLESS", compatible: true },
+      { name: "Быстрые", protocolLabel: "Hysteria 2", compatible: true }
     ]
   }],
   domainEntries: [
@@ -61,8 +68,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.6.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.6.0"
+    version: "0.7.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.0"
   }
 };
 let status = null;
@@ -74,6 +81,11 @@ async function send(type, payload = {}) {
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
     if (type === "setRouteMode") PREVIEW_STATUS.routeMode = payload.routeMode;
     if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
+    if (type === "selectServer") {
+      PREVIEW_STATUS.activeServerId = payload.id;
+      PREVIEW_STATUS.activeServer = PREVIEW_STATUS.servers.find((item) => item.id === payload.id) || PREVIEW_STATUS.activeServer;
+    }
+    if (type === "connectSubscription" || type === "refreshSubscription") return { ...PREVIEW_STATUS };
     if (type === "deleteSubscription") {
       PREVIEW_STATUS.subscriptions = PREVIEW_STATUS.subscriptions.filter((item) => item.id !== payload.id);
     }
@@ -179,7 +191,7 @@ function renderSubscriptions(subscriptions = []) {
     const date = subscription.updatedAt
       ? new Date(subscription.updatedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })
       : "ещё не обновлялась";
-    meta.textContent = `${subscription.nodeCount} узлов · ${subscription.compatibleCount} прямо · ${subscription.companionCount} через клиент · ${date}`;
+    meta.textContent = `${subscription.nodeCount} узлов на Routeva Gateway · ${date}`;
     const protocols = document.createElement("div");
     protocols.className = "subscription-protocols";
     (subscription.protocols || []).forEach((protocol) => {
@@ -220,6 +232,14 @@ function renderSubscriptions(subscriptions = []) {
     });
     actions.append(refreshButton, deleteButton);
 
+    const compatibility = document.createElement("div");
+    compatibility.className = "subscription-compatibility mixed";
+    const compatibilityTitle = document.createElement("strong");
+    compatibilityTitle.textContent = `${subscription.nodeCount} узлов готовы к переключению`;
+    const compatibilityText = document.createElement("span");
+    compatibilityText.textContent = "VLESS, Hysteria 2 и Shadowsocks запускаются на вашем Routeva Gateway. На компьютере не нужен отдельный VPN-клиент.";
+    compatibility.append(compatibilityTitle, compatibilityText);
+
     const nodes = document.createElement("div");
     nodes.className = "subscription-nodes";
     (subscription.nodes || []).slice(0, 8).forEach((node) => {
@@ -230,7 +250,7 @@ function renderSubscriptions(subscriptions = []) {
       const name = document.createElement("span");
       name.textContent = node.name;
       const mode = document.createElement("em");
-      mode.textContent = node.compatible ? "работает прямо" : "нужен Happ/Amnezia";
+      mode.textContent = "готов на Gateway";
       row.append(type, name, mode);
       nodes.append(row);
     });
@@ -240,9 +260,15 @@ function renderSubscriptions(subscriptions = []) {
       more.textContent = `Ещё ${(subscription.nodes.length - 8).toLocaleString("ru-RU")} узлов`;
       nodes.append(more);
     }
-    card.append(main, actions, nodes);
+    card.append(main, actions, compatibility, nodes);
     container.append(card);
   });
+}
+
+function renderCompanionSummary(subscriptions = []) {
+  const container = $("#companionSummary");
+  container.replaceChildren();
+  container.classList.add("hidden");
 }
 
 function sourceLabel(source) {
@@ -313,12 +339,30 @@ function render(next) {
   editingServerId = next.activeServerId;
   const server = next.activeServer;
   const select = $("#serverSelect");
-  select.replaceChildren(...next.servers.map((item) => {
+  const manualServers = next.servers.filter((item) => item.source !== "gateway");
+  const gatewayServers = next.servers.filter((item) => item.source === "gateway");
+  const createOption = (item) => {
     const option = document.createElement("option");
     option.value = item.id;
-    option.textContent = `${item.flag || "🌐"} ${item.name} · ${item.protocolLabel || protocolLabel(item.scheme)}`;
+    const hasFlagInName = /^[\u{1F1E6}-\u{1F1FF}]{2}/u.test(item.name || "");
+    option.textContent = `${hasFlagInName ? "" : `${item.flag || "🌐"} `}${item.name} · ${item.protocolLabel || protocolLabel(item.scheme)}`;
     return option;
-  }));
+  };
+  const groups = [];
+  if (manualServers.length) {
+    const manualGroup = document.createElement("optgroup");
+    manualGroup.label = "Основное подключение";
+    manualGroup.append(...manualServers.map(createOption));
+    groups.push(manualGroup);
+  }
+  if (gatewayServers.length) {
+    const gatewayGroup = document.createElement("optgroup");
+    gatewayGroup.label = `Узлы Routeva Gateway · ${gatewayServers.length.toLocaleString("ru-RU")}`;
+    gatewayGroup.append(...gatewayServers.map(createOption));
+    groups.push(gatewayGroup);
+  }
+  select.replaceChildren(...groups);
+  renderCompanionSummary([]);
   select.value = next.activeServerId;
   $("#serverName").value = server.name || "";
   $("#proxyScheme").value = server.scheme || "https";
@@ -326,7 +370,17 @@ function render(next) {
   $("#proxyPort").value = server.port || "";
   $("#proxyUsername").value = server.username || "";
   $("#proxyPassword").value = server.password || "";
-  $("#deleteServer").disabled = next.servers.length <= 1;
+  const gatewayNode = server.source === "gateway";
+  ["serverName", "proxyScheme", "proxyHost", "proxyPort", "proxyUsername", "proxyPassword", "showPassword"].forEach((id) => {
+    $("#" + id).disabled = gatewayNode;
+  });
+  $("#saveAndTest").disabled = gatewayNode;
+  $("#deleteServer").disabled = gatewayNode || manualServers.length <= 1;
+  if (gatewayNode) {
+    const result = $("#testResult");
+    result.className = "test-result success";
+    result.textContent = "Узел работает на Routeva Gateway — отдельная программа на компьютере не нужна";
+  }
   document.querySelectorAll(".options-route-mode .route-mode-button").forEach((button) => {
     const selected = button.dataset.routeMode === next.routeMode;
     button.classList.toggle("active", selected);
@@ -354,7 +408,19 @@ function render(next) {
 }
 
 async function refresh() {
-  render(await send("getStatus", { includeCredentials: true, includeDomains: true }));
+  const next = await send("getStatus", { includeCredentials: true, includeDomains: true });
+  render(next);
+  const connectId = new URLSearchParams(location.search).get("connect");
+  if (connectId) {
+    const subscription = next.subscriptions?.find((item) => item.id === connectId);
+    if (subscription) {
+      setConnectionMethod("subscription");
+      $("#subscriptionConnectionPanel").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    const cleanUrl = new URL(location.href);
+    cleanUrl.searchParams.delete("connect");
+    history.replaceState(null, "", cleanUrl);
+  }
 }
 
 $("#showPassword").addEventListener("click", () => {
@@ -410,6 +476,9 @@ $("#serverSelect").addEventListener("change", async (event) => {
 $("#newServer").addEventListener("click", () => {
   setConnectionMethod("manual");
   editingServerId = null;
+  ["serverName", "proxyScheme", "proxyHost", "proxyPort", "proxyUsername", "proxyPassword", "showPassword", "saveAndTest"].forEach((id) => {
+    $("#" + id).disabled = false;
+  });
   $("#serverName").value = `Сервер ${status.servers.length + 1}`;
   $("#proxyScheme").value = "https";
   $("#proxyHost").value = "";
@@ -461,15 +530,17 @@ $("#subscriptionForm").addEventListener("submit", async (event) => {
   button.disabled = true;
   button.querySelector("span").textContent = "Читаю подписку…";
   try {
-    render(await send("importSubscription", {
+    const next = await send("importSubscription", {
       subscription: {
         name: $("#subscriptionName").value.trim() || url.hostname,
         url: url.href
       }
-    }));
+    });
+    render(next);
     $("#subscriptionName").value = "";
     $("#subscriptionUrl").value = "";
-    toast("Подписка добавлена");
+    const imported = next.subscriptions?.find((item) => item.url === url.href);
+    toast(`Подписка добавлена на Gateway: ${imported?.nodeCount || 0} узлов доступны`);
   } catch (error) {
     toast(error.message, "error");
   } finally {
@@ -479,8 +550,10 @@ $("#subscriptionForm").addEventListener("submit", async (event) => {
 });
 
 $("#deleteServer").addEventListener("click", async () => {
-  if (!editingServerId || status.servers.length <= 1) return;
+  const manualServers = status.servers.filter((item) => item.source !== "gateway");
+  if (!editingServerId || manualServers.length <= 1) return;
   const server = status.servers.find((item) => item.id === editingServerId);
+  if (!server || server.source === "gateway") return;
   if (!confirm(`Удалить сервер «${server?.name || "Без названия"}»?`)) return;
   try {
     render(await send("deleteServer", { id: editingServerId }));
