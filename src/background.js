@@ -1,6 +1,6 @@
 import {
-  COMMUNITY_LIST_URL,
   CORE_DOMAINS,
+  DOMAIN_SOURCES,
   domainMatches,
   effectiveDomains,
   generatePac,
@@ -8,6 +8,7 @@ import {
   parseDomainList,
   routeSource
 } from "../lib/rules.js";
+import { compareVersions, releaseUrl } from "../lib/version.js";
 
 const DEFAULT_SERVER = Object.freeze({
   id: "server-1",
@@ -23,11 +24,14 @@ const DEFAULT_STATE = Object.freeze({
   configured: false,
   useCommunityList: true,
   communityDomains: [],
+  communitySources: [],
   communityUpdatedAt: null,
   customDomains: [],
   bypassDomains: [],
   activeServerId: DEFAULT_SERVER.id,
   servers: [DEFAULT_SERVER],
+  updateNotice: null,
+  dismissedUpdateVersion: null,
   lastError: null
 });
 
@@ -64,6 +68,7 @@ function mergeState(saved = {}) {
     servers,
     activeServerId,
     communityDomains: [...(saved.communityDomains ?? [])],
+    communitySources: [...(saved.communitySources ?? [])],
     customDomains: [...(saved.customDomains ?? [])],
     bypassDomains: [...(saved.bypassDomains ?? [])]
   };
@@ -105,20 +110,37 @@ async function initialize() {
     state = await saveState({
       ...state,
       communityDomains,
+      communitySources: [{ id: "bundled", name: "Встроенный список", count: communityDomains.length }],
       communityUpdatedAt: "2026-07-15T00:00:00.000Z"
     });
   }
   await chrome.alarms.create("refresh-community-list", { periodInMinutes: 24 * 60 });
+  await chrome.alarms.create("check-extension-update", { periodInMinutes: 6 * 60 });
   await applyProxy(state);
+  const updatedAt = state.communityUpdatedAt ? new Date(state.communityUpdatedAt).getTime() : 0;
+  const needsSources = state.communitySources.length < DOMAIN_SOURCES.length;
+  if (needsSources || Date.now() - updatedAt > 24 * 60 * 60 * 1000) {
+    updateCommunityList().catch(() => {});
+  }
+  checkForExtensionUpdate().catch(() => {});
   return state;
 }
 
 async function setBadge(state) {
   const active = state.enabled && isServerConfigured(getActiveServer(state));
-  await chrome.action.setBadgeText({ text: active ? "ON" : "" });
-  await chrome.action.setBadgeBackgroundColor({ color: active ? "#14A27A" : "#8A93A3" });
+  const notice = state.updateNotice;
+  const badge = notice ? (notice.kind === "available" ? "NEW" : "✓") : active ? "ON" : "";
+  const badgeColor = notice ? "#6F5BE7" : active ? "#14A27A" : "#8A93A3";
+  await chrome.action.setBadgeText({ text: badge });
+  await chrome.action.setBadgeBackgroundColor({ color: badgeColor });
   await chrome.action.setTitle({
-    title: active ? "Amnezia Split включён" : "Amnezia Split выключен"
+    title: notice
+      ? notice.kind === "available"
+        ? `Доступно обновление ${notice.version}`
+        : `Обновлено до ${notice.version}`
+      : active
+        ? "Amnezia Split включён"
+        : "Amnezia Split выключен"
   });
 }
 
@@ -150,20 +172,107 @@ async function applyProxy(providedState) {
 }
 
 async function updateCommunityList() {
-  const response = await fetch(`${COMMUNITY_LIST_URL}?ts=${Date.now()}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Источник списка ответил ${response.status}`);
-  const domains = parseDomainList(await response.text());
-  if (domains.length < 500) throw new Error("Получен подозрительно короткий список");
+  const fetched = await Promise.all(
+    DOMAIN_SOURCES.map(async (source) => {
+      const response = await fetch(`${source.url}?ts=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`${source.name}: HTTP ${response.status}`);
+      const domains = parseDomainList(await response.text());
+      if (domains.length < source.minimum) {
+        throw new Error(`${source.name}: получен подозрительно короткий список`);
+      }
+      return { ...source, domains };
+    })
+  );
+  const domains = [...new Set(fetched.flatMap((source) => source.domains))].sort();
+  const communitySources = fetched.map((source) => ({
+    id: source.id,
+    name: source.name,
+    count: source.domains.length
+  }));
 
   const state = await getState();
   const next = await saveState({
     ...state,
     communityDomains: domains,
+    communitySources,
     communityUpdatedAt: new Date().toISOString(),
     lastError: null
   });
   await applyProxy(next);
-  return { count: domains.length, updatedAt: next.communityUpdatedAt };
+  return { count: domains.length, sources: communitySources, updatedAt: next.communityUpdatedAt };
+}
+
+function publicUpdateNotice(state) {
+  if (!state.updateNotice || state.dismissedUpdateVersion === state.updateNotice.version) return null;
+  return { ...state.updateNotice };
+}
+
+async function broadcastUpdateNotice(notice) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.allSettled(
+    tabs.filter((tab) => tab.id).map((tab) => chrome.tabs.sendMessage(tab.id, {
+      type: "updateNoticeChanged",
+      notice
+    }))
+  );
+}
+
+async function checkForExtensionUpdate() {
+  const manifest = chrome.runtime.getManifest();
+  if (!manifest.update_url) return null;
+  const response = await fetch(`${manifest.update_url}?ts=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Проверка обновления: HTTP ${response.status}`);
+  const xml = await response.text();
+  const remoteVersion = xml.match(/<updatecheck\b[^>]*\bversion=["']([^"']+)["']/i)?.[1];
+  if (!remoteVersion) throw new Error("Не удалось прочитать версию обновления");
+
+  const state = await getState();
+  if (compareVersions(remoteVersion, manifest.version) <= 0) return publicUpdateNotice(state);
+  if (state.dismissedUpdateVersion === remoteVersion) return null;
+  if (state.updateNotice?.kind === "available" && state.updateNotice.version === remoteVersion) {
+    return publicUpdateNotice(state);
+  }
+
+  const notice = {
+    kind: "available",
+    version: remoteVersion,
+    url: releaseUrl(remoteVersion)
+  };
+  const next = await saveState({ ...state, updateNotice: notice });
+  await setBadge(next);
+  await broadcastUpdateNotice(notice);
+  return notice;
+}
+
+async function setInstalledUpdateNotice(previousVersion) {
+  const version = chrome.runtime.getManifest().version;
+  const state = await getState();
+  const notice = {
+    kind: "installed",
+    version,
+    previousVersion: previousVersion ?? null,
+    url: releaseUrl(version)
+  };
+  const next = await saveState({
+    ...state,
+    updateNotice: notice,
+    dismissedUpdateVersion: null
+  });
+  await setBadge(next);
+  await broadcastUpdateNotice(notice);
+}
+
+async function dismissUpdateNotice() {
+  const state = await getState();
+  const version = state.updateNotice?.version ?? null;
+  const next = await saveState({
+    ...state,
+    updateNotice: null,
+    dismissedUpdateVersion: version
+  });
+  await setBadge(next);
+  await broadcastUpdateNotice(null);
+  return { dismissed: Boolean(version) };
 }
 
 async function toggleDomain(host) {
@@ -286,7 +395,7 @@ async function testProxy() {
   }
 }
 
-function getPublicStatus(host, state, includeCredentials = false) {
+function getPublicStatus(host, state, includeCredentials = false, includeDomains = false) {
   const domains = effectiveDomains(state);
   const source = host ? routeSource(host, state) : "direct";
   const activeServer = getActiveServer(state);
@@ -306,10 +415,14 @@ function getPublicStatus(host, state, includeCredentials = false) {
     configured,
     useCommunityList: state.useCommunityList,
     communityCount: state.communityDomains.length,
+    communitySources: state.communitySources,
     communityUpdatedAt: state.communityUpdatedAt,
     customDomains: state.customDomains,
     bypassDomains: state.bypassDomains,
     activeCount: domains.length,
+    domainEntries: includeDomains
+      ? domains.map((domain) => ({ domain, source: routeSource(domain, state) }))
+      : undefined,
     currentDomain: host ?? null,
     currentRouted: host ? source !== "direct" : false,
     currentSource: source,
@@ -317,6 +430,7 @@ function getPublicStatus(host, state, includeCredentials = false) {
     activeServer: exposeServer(activeServer),
     servers: state.servers.map(exposeServer),
     proxy: exposeServer(activeServer),
+    updateNotice: publicUpdateNotice(state),
     lastError: state.lastError
   };
 }
@@ -325,7 +439,18 @@ async function handleMessage(message) {
   const state = await getState();
   switch (message?.type) {
     case "getStatus":
-      return getPublicStatus(normalizeDomain(message.host), state, Boolean(message.includeCredentials));
+      return getPublicStatus(
+        normalizeDomain(message.host),
+        state,
+        Boolean(message.includeCredentials),
+        Boolean(message.includeDomains)
+      );
+    case "getUpdateNotice":
+      return publicUpdateNotice(state);
+    case "dismissUpdateNotice":
+      return dismissUpdateNotice();
+    case "checkForUpdate":
+      return checkForExtensionUpdate();
     case "setEnabled": {
       const next = await saveState({ ...state, enabled: Boolean(message.enabled) });
       await applyProxy(next);
@@ -426,14 +551,16 @@ chrome.proxy.onProxyError.addListener(async (details) => {
   await saveState({ ...state, lastError: details.error || details.details || "Ошибка прокси" });
 });
 
-chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
   await initialize();
   if (reason === "install") await chrome.runtime.openOptionsPage();
+  if (reason === "update") await setInstalledUpdateNotice(previousVersion);
 });
 
 chrome.runtime.onStartup.addListener(initialize);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "refresh-community-list") updateCommunityList().catch(() => {});
+  if (alarm.name === "check-extension-update") checkForExtensionUpdate().catch(() => {});
 });
 
 initialize().catch(async (error) => {

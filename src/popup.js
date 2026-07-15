@@ -5,14 +5,19 @@ const PREVIEW_STATUS = {
   enabled: true,
   configured: true,
   useCommunityList: true,
-  communityCount: 1183,
-  activeCount: 1183,
+  communityCount: 1687,
+  activeCount: 1692,
   currentRouted: true,
   activeServerId: "server-1",
   servers: [
     { id: "server-1", name: "Основной сервер" },
     { id: "server-2", name: "Резервный" }
-  ]
+  ],
+  updateNotice: {
+    kind: "installed",
+    version: "0.3.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.3.0"
+  }
 };
 
 let currentHost = "";
@@ -24,6 +29,7 @@ async function send(type, payload = {}) {
     if (type === "toggleDomain") PREVIEW_STATUS.currentRouted = !PREVIEW_STATUS.currentRouted;
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
     if (type === "selectServer") PREVIEW_STATUS.activeServerId = payload.id;
+    if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
     return { ...PREVIEW_STATUS };
   }
   const response = await chrome.runtime.sendMessage({ type, ...payload });
@@ -41,6 +47,16 @@ function showNotice(text, kind = "info") {
   notice.className = `notice ${kind}`;
   window.clearTimeout(showNotice.timer);
   showNotice.timer = window.setTimeout(() => notice.classList.add("hidden"), 2800);
+}
+
+function renderUpdateNotice(notice) {
+  const card = $("#updateCard");
+  card.classList.toggle("hidden", !notice);
+  if (!notice) return;
+  $("#updateText").textContent = notice.kind === "installed"
+    ? `Обновлено до ${notice.version}`
+    : `Доступна версия ${notice.version}`;
+  $("#updateLink").href = notice.url;
 }
 
 function render(status) {
@@ -74,6 +90,7 @@ function render(status) {
     return option;
   }));
   serverSelect.value = status.activeServerId;
+  renderUpdateNotice(status.updateNotice);
 
   if (currentHost) {
     $("#currentSitePanel").classList.remove("is-disabled");
@@ -140,6 +157,16 @@ $("#serverSelect").addEventListener("change", async (event) => {
     await send("selectServer", { id: event.target.value });
     await refresh();
     showNotice("Сервер переключён", "success");
+  } catch (error) {
+    showNotice(error.message, "error");
+  }
+});
+
+$("#dismissUpdate").addEventListener("click", async () => {
+  try {
+    await send("dismissUpdateNotice");
+    currentStatus.updateNotice = null;
+    renderUpdateNotice(null);
   } catch (error) {
     showNotice(error.message, "error");
   }
