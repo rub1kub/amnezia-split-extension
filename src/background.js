@@ -9,7 +9,9 @@ import {
   routeSource
 } from "../lib/rules.js";
 
-const DEFAULT_PROXY = Object.freeze({
+const DEFAULT_SERVER = Object.freeze({
+  id: "server-1",
+  name: "Основной сервер",
   host: "ton4.pro",
   port: 18443,
   username: "amnezia-browser",
@@ -24,22 +26,57 @@ const DEFAULT_STATE = Object.freeze({
   communityUpdatedAt: null,
   customDomains: [],
   bypassDomains: [],
-  proxy: DEFAULT_PROXY,
+  activeServerId: DEFAULT_SERVER.id,
+  servers: [DEFAULT_SERVER],
   lastError: null
 });
 
 let stateCache = null;
 const proxyAuthAttempts = new Map();
 
+function normalizeServer(server = {}, fallbackId = "server-1", fallbackName = "Сервер") {
+  return {
+    id: String(server.id || fallbackId),
+    name: String(server.name || fallbackName).trim() || fallbackName,
+    host: String(server.host || "").trim().toLowerCase(),
+    port: Number(server.port) || 0,
+    username: String(server.username || "").trim(),
+    password: String(server.password || "")
+  };
+}
+
 function mergeState(saved = {}) {
+  const sourceServers = Array.isArray(saved.servers) && saved.servers.length
+    ? saved.servers
+    : saved.proxy
+      ? [{ ...saved.proxy, id: "server-1", name: "Основной сервер" }]
+      : [DEFAULT_SERVER];
+  const servers = sourceServers.map((server, index) =>
+    normalizeServer(server, `server-${index + 1}`, `Сервер ${index + 1}`)
+  );
+  const activeServerId = servers.some((server) => server.id === saved.activeServerId)
+    ? saved.activeServerId
+    : servers[0].id;
+
   return {
     ...DEFAULT_STATE,
     ...saved,
-    proxy: { ...DEFAULT_PROXY, ...(saved.proxy ?? {}) },
+    servers,
+    activeServerId,
     communityDomains: [...(saved.communityDomains ?? [])],
     customDomains: [...(saved.customDomains ?? [])],
     bypassDomains: [...(saved.bypassDomains ?? [])]
   };
+}
+
+function getActiveServer(state) {
+  return state.servers.find((server) => server.id === state.activeServerId) ?? state.servers[0];
+}
+
+function isServerConfigured(server) {
+  return Boolean(
+    server?.host && Number(server.port) > 0 && server.username && server.password
+  );
 }
 
 async function getState() {
@@ -76,13 +113,8 @@ async function initialize() {
   return state;
 }
 
-function isProxyConfigured(state) {
-  const { host, port, username, password } = state.proxy;
-  return Boolean(host && Number(port) > 0 && username && password);
-}
-
 async function setBadge(state) {
-  const active = state.enabled && state.configured;
+  const active = state.enabled && isServerConfigured(getActiveServer(state));
   await chrome.action.setBadgeText({ text: active ? "ON" : "" });
   await chrome.action.setBadgeBackgroundColor({ color: active ? "#14A27A" : "#8A93A3" });
   await chrome.action.setTitle({
@@ -92,7 +124,8 @@ async function setBadge(state) {
 
 async function applyProxy(providedState) {
   const state = providedState ?? (await getState());
-  if (!state.enabled || !state.configured || !isProxyConfigured(state)) {
+  const server = getActiveServer(state);
+  if (!state.enabled || !isServerConfigured(server)) {
     await chrome.proxy.settings.clear({ scope: "regular" });
     await setBadge(state);
     return;
@@ -102,8 +135,8 @@ async function applyProxy(providedState) {
   const pac = generatePac({
     domains,
     bypassDomains: state.bypassDomains,
-    proxyHost: state.proxy.host,
-    proxyPort: state.proxy.port
+    proxyHost: server.host,
+    proxyPort: server.port
   });
 
   await chrome.proxy.settings.set({
@@ -154,20 +187,29 @@ async function toggleDomain(host) {
   return getPublicStatus(domain, next);
 }
 
-async function saveProxy(proxy) {
-  const host = String(proxy.host ?? "").trim().toLowerCase();
-  const port = Number(proxy.port);
-  const username = String(proxy.username ?? "").trim();
-  const password = String(proxy.password ?? "");
+async function saveServer(serverInput) {
+  const state = await getState();
+  const existing = state.servers.find((server) => server.id === serverInput.id);
+  const id = existing?.id || crypto.randomUUID();
+  const name = String(serverInput.name ?? existing?.name ?? `Сервер ${state.servers.length + 1}`).trim();
+  const host = String(serverInput.host ?? "").trim().toLowerCase();
+  const port = Number(serverInput.port);
+  const username = String(serverInput.username ?? "").trim();
+  const password = String(serverInput.password ?? "");
+  if (!name) throw new Error("Введите название сервера");
   if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("Проверьте адрес сервера и порт");
   }
   if (!username || !password) throw new Error("Введите логин и пароль");
 
-  const state = await getState();
+  const server = { id, name, host, port, username, password };
+  const servers = existing
+    ? state.servers.map((item) => (item.id === id ? server : item))
+    : [...state.servers, server];
   const next = await saveState({
     ...state,
-    proxy: { host, port, username, password },
+    servers,
+    activeServerId: id,
     configured: true,
     enabled: true,
     lastError: null
@@ -176,9 +218,42 @@ async function saveProxy(proxy) {
   return getPublicStatus(null, next, true);
 }
 
+async function selectServer(id) {
+  const state = await getState();
+  const server = state.servers.find((item) => item.id === id);
+  if (!server) throw new Error("Сервер не найден");
+  const next = await saveState({
+    ...state,
+    activeServerId: server.id,
+    configured: isServerConfigured(server),
+    lastError: null
+  });
+  await applyProxy(next);
+  return getPublicStatus(null, next, true);
+}
+
+async function deleteServer(id) {
+  const state = await getState();
+  if (state.servers.length <= 1) throw new Error("Оставьте хотя бы один сервер");
+  const servers = state.servers.filter((server) => server.id !== id);
+  if (servers.length === state.servers.length) throw new Error("Сервер не найден");
+  const activeServerId = state.activeServerId === id ? servers[0].id : state.activeServerId;
+  const activeServer = servers.find((server) => server.id === activeServerId) ?? servers[0];
+  const next = await saveState({
+    ...state,
+    servers,
+    activeServerId: activeServer.id,
+    configured: isServerConfigured(activeServer),
+    lastError: null
+  });
+  await applyProxy(next);
+  return getPublicStatus(null, next, true);
+}
+
 async function testProxy() {
   const state = await getState();
-  if (!isProxyConfigured(state)) throw new Error("Сначала сохраните данные подключения");
+  const server = getActiveServer(state);
+  if (!isServerConfigured(server)) throw new Error("Сначала сохраните данные подключения");
   try {
     await chrome.proxy.settings.clear({ scope: "regular" });
     const directResponse = await fetch(`https://api.ipify.org?format=json&direct=${Date.now()}`, {
@@ -193,8 +268,8 @@ async function testProxy() {
         rules: {
           singleProxy: {
             scheme: "https",
-            host: state.proxy.host,
-            port: Number(state.proxy.port)
+            host: server.host,
+            port: Number(server.port)
           }
         }
       },
@@ -214,9 +289,21 @@ async function testProxy() {
 function getPublicStatus(host, state, includeCredentials = false) {
   const domains = effectiveDomains(state);
   const source = host ? routeSource(host, state) : "direct";
+  const activeServer = getActiveServer(state);
+  const configured = isServerConfigured(activeServer);
+  const exposeServer = (server) => includeCredentials
+    ? { ...server }
+    : {
+        id: server.id,
+        name: server.name,
+        host: server.host,
+        port: server.port,
+        username: server.username,
+        hasPassword: Boolean(server.password)
+      };
   return {
     enabled: state.enabled,
-    configured: state.configured,
+    configured,
     useCommunityList: state.useCommunityList,
     communityCount: state.communityDomains.length,
     communityUpdatedAt: state.communityUpdatedAt,
@@ -226,14 +313,10 @@ function getPublicStatus(host, state, includeCredentials = false) {
     currentDomain: host ?? null,
     currentRouted: host ? source !== "direct" : false,
     currentSource: source,
-    proxy: includeCredentials
-      ? state.proxy
-      : {
-          host: state.proxy.host,
-          port: state.proxy.port,
-          username: state.proxy.username,
-          hasPassword: Boolean(state.proxy.password)
-        },
+    activeServerId: activeServer.id,
+    activeServer: exposeServer(activeServer),
+    servers: state.servers.map(exposeServer),
+    proxy: exposeServer(activeServer),
     lastError: state.lastError
   };
 }
@@ -258,7 +341,13 @@ async function handleMessage(message) {
     case "updateCommunityList":
       return updateCommunityList();
     case "saveProxy":
-      return saveProxy(message.proxy ?? {});
+      return saveServer({ ...(message.proxy ?? {}), id: state.activeServerId });
+    case "saveServer":
+      return saveServer(message.server ?? {});
+    case "selectServer":
+      return selectServer(String(message.id ?? ""));
+    case "deleteServer":
+      return deleteServer(String(message.id ?? ""));
     case "testProxy":
       return testProxy();
     case "addDomain":
@@ -308,16 +397,17 @@ chrome.webRequest.onAuthRequired.addListener(
     getState()
       .then((state) => {
         if (!details.isProxy) return callback();
+        const server = getActiveServer(state);
         const challenger = details.challenger?.host?.toLowerCase();
-        if (challenger && challenger !== state.proxy.host.toLowerCase()) return callback();
-        if (!state.configured) return callback({ cancel: true });
+        if (challenger && challenger !== server.host.toLowerCase()) return callback();
+        if (!isServerConfigured(server)) return callback({ cancel: true });
         const attempts = proxyAuthAttempts.get(details.requestId) ?? 0;
         if (attempts >= 2) return callback({ cancel: true });
         proxyAuthAttempts.set(details.requestId, attempts + 1);
         callback({
           authCredentials: {
-            username: state.proxy.username,
-            password: state.proxy.password
+            username: server.username,
+            password: server.password
           }
         });
       })

@@ -7,7 +7,12 @@ const PREVIEW_STATUS = {
   useCommunityList: true,
   communityCount: 1183,
   activeCount: 1183,
-  currentRouted: true
+  currentRouted: true,
+  activeServerId: "server-1",
+  servers: [
+    { id: "server-1", name: "Основной сервер" },
+    { id: "server-2", name: "Резервный" }
+  ]
 };
 
 let currentHost = "";
@@ -18,6 +23,7 @@ async function send(type, payload = {}) {
     if (type === "setEnabled") PREVIEW_STATUS.enabled = payload.enabled;
     if (type === "toggleDomain") PREVIEW_STATUS.currentRouted = !PREVIEW_STATUS.currentRouted;
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
+    if (type === "selectServer") PREVIEW_STATUS.activeServerId = payload.id;
     return { ...PREVIEW_STATUS };
   }
   const response = await chrome.runtime.sendMessage({ type, ...payload });
@@ -60,6 +66,14 @@ function render(status) {
   setSwitch($("#masterToggle"), active);
   setSwitch($("#communityToggle"), status.useCommunityList);
   $("#communityLabel").textContent = `${status.communityCount.toLocaleString("ru-RU")} сайтов для России`;
+  const serverSelect = $("#serverSelect");
+  serverSelect.replaceChildren(...status.servers.map((server) => {
+    const option = document.createElement("option");
+    option.value = server.id;
+    option.textContent = server.name;
+    return option;
+  }));
+  serverSelect.value = status.activeServerId;
 
   if (currentHost) {
     $("#currentSitePanel").classList.remove("is-disabled");
@@ -116,6 +130,16 @@ $("#communityToggle").addEventListener("click", async () => {
   try {
     await send("setCommunityList", { enabled: !currentStatus.useCommunityList });
     await refresh();
+  } catch (error) {
+    showNotice(error.message, "error");
+  }
+});
+
+$("#serverSelect").addEventListener("change", async (event) => {
+  try {
+    await send("selectServer", { id: event.target.value });
+    await refresh();
+    showNotice("Сервер переключён", "success");
   } catch (error) {
     showNotice(error.message, "error");
   }
