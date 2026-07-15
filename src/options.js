@@ -19,13 +19,36 @@ const PREVIEW_STATUS = {
     name: "Основной сервер",
     host: "ton4.pro",
     port: 18443,
+    scheme: "https",
+    protocolLabel: "HTTPS",
     username: "amnezia-browser",
-    password: ""
+    password: "",
+    countryCode: "NL",
+    countryName: "Нидерланды",
+    flag: "🇳🇱",
+    exitIp: "203.0.113.10"
   },
   servers: [
-    { id: "server-1", name: "Основной сервер", host: "ton4.pro", port: 18443, username: "amnezia-browser", password: "" },
-    { id: "server-2", name: "Резервный", host: "backup.example.com", port: 443, username: "user", password: "demo" }
+    { id: "server-1", name: "Нидерланды", host: "ton4.pro", port: 18443, scheme: "https", protocolLabel: "HTTPS", username: "amnezia-browser", password: "", countryCode: "NL", countryName: "Нидерланды", flag: "🇳🇱", exitIp: "203.0.113.10" },
+    { id: "server-2", name: "Happ · Германия", host: "127.0.0.1", port: 1080, scheme: "socks5", protocolLabel: "SOCKS5", username: "", password: "", countryCode: "DE", countryName: "Германия", flag: "🇩🇪", exitIp: "198.51.100.24" }
   ],
+  subscriptions: [{
+    id: "sub-1",
+    name: "Пример подписки",
+    origin: "https://provider.example",
+    url: "https://provider.example/private-token",
+    updatedAt: "2026-07-15T12:00:00.000Z",
+    nodeCount: 4,
+    compatibleCount: 2,
+    companionCount: 2,
+    protocols: ["socks5", "https", "vless", "trojan"],
+    nodes: [
+      { name: "Happ Local", protocolLabel: "SOCKS5", compatible: true },
+      { name: "Amsterdam", protocolLabel: "HTTPS", compatible: true },
+      { name: "Berlin VLESS", protocolLabel: "VLESS", compatible: false },
+      { name: "Warsaw Trojan", protocolLabel: "Trojan", compatible: false }
+    ]
+  }],
   domainEntries: [
     { domain: "chatgpt.com", source: "core" },
     { domain: "openai.com", source: "core" },
@@ -37,8 +60,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.3.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.3.0"
+    version: "0.4.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.4.0"
   }
 };
 let status = null;
@@ -49,6 +72,9 @@ async function send(type, payload = {}) {
   if (PREVIEW) {
     if (type === "setCommunityList") PREVIEW_STATUS.useCommunityList = payload.enabled;
     if (type === "dismissUpdateNotice") PREVIEW_STATUS.updateNotice = null;
+    if (type === "deleteSubscription") {
+      PREVIEW_STATUS.subscriptions = PREVIEW_STATUS.subscriptions.filter((item) => item.id !== payload.id);
+    }
     return { ...PREVIEW_STATUS };
   }
   const response = await chrome.runtime.sendMessage({ type, ...payload });
@@ -99,6 +125,111 @@ function renderChips(container, domains, type, emptyText) {
     return;
   }
   domains.forEach((domain) => container.append(makeChip(domain, type)));
+}
+
+function protocolLabel(protocol) {
+  return {
+    http: "HTTP",
+    https: "HTTPS",
+    socks4: "SOCKS4",
+    socks5: "SOCKS5",
+    vless: "VLESS",
+    vmess: "VMess",
+    trojan: "Trojan",
+    ss: "Shadowsocks",
+    hysteria2: "Hysteria 2",
+    tuic: "TUIC",
+    wireguard: "WireGuard",
+    amneziawg: "AmneziaWG"
+  }[protocol] || String(protocol || "").toUpperCase();
+}
+
+function renderSubscriptions(subscriptions = []) {
+  const container = $("#subscriptionList");
+  container.replaceChildren();
+  if (!subscriptions.length) {
+    const empty = document.createElement("span");
+    empty.className = "empty-state";
+    empty.textContent = "Подписок пока нет";
+    container.append(empty);
+    return;
+  }
+
+  subscriptions.forEach((subscription) => {
+    const card = document.createElement("article");
+    card.className = "subscription-card";
+    const main = document.createElement("div");
+    main.className = "subscription-main";
+    const title = document.createElement("strong");
+    title.textContent = subscription.name;
+    const meta = document.createElement("span");
+    const date = subscription.updatedAt
+      ? new Date(subscription.updatedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })
+      : "ещё не обновлялась";
+    meta.textContent = `${subscription.nodeCount} узлов · ${subscription.compatibleCount} прямо · ${subscription.companionCount} через клиент · ${date}`;
+    const protocols = document.createElement("div");
+    protocols.className = "subscription-protocols";
+    (subscription.protocols || []).forEach((protocol) => {
+      const pill = document.createElement("span");
+      pill.textContent = protocolLabel(protocol);
+      protocols.append(pill);
+    });
+    main.append(title, meta, protocols);
+
+    const actions = document.createElement("div");
+    actions.className = "subscription-actions";
+    const refreshButton = document.createElement("button");
+    refreshButton.type = "button";
+    refreshButton.textContent = "Обновить";
+    refreshButton.addEventListener("click", async () => {
+      refreshButton.disabled = true;
+      try {
+        render(await send("refreshSubscription", { id: subscription.id }));
+        toast("Подписка обновлена");
+      } catch (error) {
+        toast(error.message, "error");
+      } finally {
+        refreshButton.disabled = false;
+      }
+    });
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "delete";
+    deleteButton.textContent = "Удалить";
+    deleteButton.addEventListener("click", async () => {
+      if (!confirm(`Удалить подписку «${subscription.name}» и её прокси-серверы?`)) return;
+      try {
+        render(await send("deleteSubscription", { id: subscription.id }));
+        toast("Подписка удалена");
+      } catch (error) {
+        toast(error.message, "error");
+      }
+    });
+    actions.append(refreshButton, deleteButton);
+
+    const nodes = document.createElement("div");
+    nodes.className = "subscription-nodes";
+    (subscription.nodes || []).slice(0, 8).forEach((node) => {
+      const row = document.createElement("div");
+      row.className = "subscription-node";
+      const type = document.createElement("b");
+      type.textContent = node.protocolLabel || protocolLabel(node.protocol);
+      const name = document.createElement("span");
+      name.textContent = node.name;
+      const mode = document.createElement("em");
+      mode.textContent = node.compatible ? "работает прямо" : "нужен Happ/Amnezia";
+      row.append(type, name, mode);
+      nodes.append(row);
+    });
+    if ((subscription.nodes || []).length > 8) {
+      const more = document.createElement("span");
+      more.className = "empty-state";
+      more.textContent = `Ещё ${(subscription.nodes.length - 8).toLocaleString("ru-RU")} узлов`;
+      nodes.append(more);
+    }
+    card.append(main, actions, nodes);
+    container.append(card);
+  });
 }
 
 function sourceLabel(source) {
@@ -172,11 +303,12 @@ function render(next) {
   select.replaceChildren(...next.servers.map((item) => {
     const option = document.createElement("option");
     option.value = item.id;
-    option.textContent = item.name;
+    option.textContent = `${item.flag || "🌐"} ${item.name} · ${item.protocolLabel || protocolLabel(item.scheme)}`;
     return option;
   }));
   select.value = next.activeServerId;
   $("#serverName").value = server.name || "";
+  $("#proxyScheme").value = server.scheme || "https";
   $("#proxyHost").value = server.host || "";
   $("#proxyPort").value = server.port || "";
   $("#proxyUsername").value = server.username || "";
@@ -196,6 +328,7 @@ function render(next) {
   $("#headerDot").classList.toggle("active", next.enabled && next.configured);
   $("#headerStatus").textContent = next.configured ? (next.enabled ? "Работает" : "На паузе") : "Не настроено";
   renderUpdateNotice(next.updateNotice);
+  renderSubscriptions(next.subscriptions || []);
   renderDomainViewer();
 }
 
@@ -225,13 +358,14 @@ $("#connectionForm").addEventListener("submit", async (event) => {
         name: $("#serverName").value,
         host: $("#proxyHost").value,
         port: Number($("#proxyPort").value),
+        scheme: $("#proxyScheme").value,
         username: $("#proxyUsername").value,
         password: $("#proxyPassword").value
       }
     });
     const test = await send("testProxy");
     result.className = "test-result success";
-    result.textContent = `Готово: ${test.directIp} → ${test.proxyIp}`;
+    result.textContent = `Готово: ${test.directIp} → ${test.proxyIp} · ${test.flag || "🌐"} ${test.countryName || ""}`;
     toast("Подключение работает");
     await refresh();
   } catch (error) {
@@ -255,12 +389,58 @@ $("#serverSelect").addEventListener("change", async (event) => {
 $("#newServer").addEventListener("click", () => {
   editingServerId = null;
   $("#serverName").value = `Сервер ${status.servers.length + 1}`;
+  $("#proxyScheme").value = "https";
   $("#proxyHost").value = "";
   $("#proxyPort").value = "";
   $("#proxyUsername").value = "";
   $("#proxyPassword").value = "";
   $("#serverName").focus();
   $("#testResult").className = "test-result hidden";
+});
+
+$("#showSubscriptionUrl").addEventListener("click", () => {
+  const input = $("#subscriptionUrl");
+  const show = input.type === "password";
+  input.type = show ? "text" : "password";
+  $("#showSubscriptionUrl").textContent = show ? "Скрыть" : "Показать";
+});
+
+$("#subscriptionForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector(".primary-button");
+  const rawUrl = $("#subscriptionUrl").value.trim();
+  let url;
+  try {
+    url = new URL(rawUrl);
+    if (url.protocol !== "https:") throw new Error();
+  } catch {
+    toast("Введите HTTPS-ссылку подписки", "error");
+    return;
+  }
+
+  button.disabled = true;
+  button.querySelector("span").textContent = "Читаю подписку…";
+  try {
+    if (!PREVIEW) {
+      const granted = await chrome.permissions.request({ origins: [`${url.origin}/*`] });
+      if (!granted) throw new Error("Доступ к домену подписки не разрешён");
+    }
+    render(await send("importSubscription", {
+      subscription: {
+        name: $("#subscriptionName").value.trim() || url.hostname,
+        url: url.href
+      }
+    }));
+    $("#subscriptionName").value = "";
+    $("#subscriptionUrl").value = "";
+    toast("Подписка добавлена");
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.querySelector("span").textContent = "Добавить подписку";
+  }
 });
 
 $("#deleteServer").addEventListener("click", async () => {

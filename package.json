@@ -1,11 +1,14 @@
 {
   "name": "amnezia-split-extension",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test",
     "package": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1",
-    "package:crx": "powershell -ExecutionPolicy Bypass -File scripts/package-crx.ps1"
+    "package:store": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1 -Store"
+  },
+  "devDependencies": {
+    "flag-icons": "^7.5.0"
   }
 }
