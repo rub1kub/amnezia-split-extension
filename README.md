@@ -64,7 +64,7 @@ npm run package:store
 
 - `dist/routeva` — папка для установки через **Загрузить распакованное расширение**;
 - `dist/routeva-extension.zip` — обычный релизный архив;
-- `dist/routeva-0.7.0-store.zip` — архив для Chrome Web Store с `manifest.json` в корне.
+- `dist/routeva-0.7.1-store.zip` — архив для Chrome Web Store с `manifest.json` в корне.
 
 Материалы и готовые ответы для магазина находятся в [docs/store](docs/store).
 
@@ -74,4 +74,4 @@ npm run package:store
 
 ## Лицензии
 
-Код расширения распространяется по MIT. Локальные SVG-флаги взяты из [flag-icons](https://github.com/lipis/flag-icons) (MIT); текст лицензии включён в `assets/flags`. Списки доменов принадлежат их авторам и сопровождаются ссылками на первоисточники.
+Код расширения распространяется по MIT. Локальные SVG-флаги взяты из [flag-icons](https://github.com/lipis/flag-icons), стрелки — из [Phosphor Icons](https://github.com/phosphor-icons/core) (MIT); тексты лицензий включены в `assets`. Списки доменов принадлежат их авторам и сопровождаются ссылками на первоисточники.

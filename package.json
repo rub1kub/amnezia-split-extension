@@ -1,6 +1,6 @@
 {
   "name": "routeva-extension",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "package:store": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1 -Store"
   },
   "devDependencies": {
+    "@phosphor-icons/core": "^2.1.1",
     "flag-icons": "^7.5.0"
   }
 }

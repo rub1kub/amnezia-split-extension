@@ -68,8 +68,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.7.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.0"
+    version: "0.7.1",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.1"
   }
 };
 let status = null;
@@ -232,14 +232,6 @@ function renderSubscriptions(subscriptions = []) {
     });
     actions.append(refreshButton, deleteButton);
 
-    const compatibility = document.createElement("div");
-    compatibility.className = "subscription-compatibility mixed";
-    const compatibilityTitle = document.createElement("strong");
-    compatibilityTitle.textContent = `${subscription.nodeCount} узлов готовы к переключению`;
-    const compatibilityText = document.createElement("span");
-    compatibilityText.textContent = "VLESS, Hysteria 2 и Shadowsocks запускаются на вашем Routeva Gateway. На компьютере не нужен отдельный VPN-клиент.";
-    compatibility.append(compatibilityTitle, compatibilityText);
-
     const nodes = document.createElement("div");
     nodes.className = "subscription-nodes";
     (subscription.nodes || []).slice(0, 8).forEach((node) => {
@@ -250,7 +242,7 @@ function renderSubscriptions(subscriptions = []) {
       const name = document.createElement("span");
       name.textContent = node.name;
       const mode = document.createElement("em");
-      mode.textContent = "готов на Gateway";
+      mode.textContent = "Доступен";
       row.append(type, name, mode);
       nodes.append(row);
     });
@@ -260,15 +252,9 @@ function renderSubscriptions(subscriptions = []) {
       more.textContent = `Ещё ${(subscription.nodes.length - 8).toLocaleString("ru-RU")} узлов`;
       nodes.append(more);
     }
-    card.append(main, actions, compatibility, nodes);
+    card.append(main, actions, nodes);
     container.append(card);
   });
-}
-
-function renderCompanionSummary(subscriptions = []) {
-  const container = $("#companionSummary");
-  container.replaceChildren();
-  container.classList.add("hidden");
 }
 
 function sourceLabel(source) {
@@ -331,56 +317,42 @@ function renderDomainViewer() {
   }
 }
 
-function render(next) {
-  if (!Array.isArray(next.domainEntries)) {
-    next = { ...next, domainEntries: status?.domainEntries ?? [] };
-  }
-  status = next;
-  editingServerId = next.activeServerId;
-  const server = next.activeServer;
-  const select = $("#serverSelect");
+function renderServerEditor(next) {
   const manualServers = next.servers.filter((item) => item.source !== "gateway");
-  const gatewayServers = next.servers.filter((item) => item.source === "gateway");
-  const createOption = (item) => {
+  if (!manualServers.some((item) => item.id === editingServerId)) {
+    editingServerId = next.gateway?.proxyServerId
+      || manualServers.find((item) => item.id === next.activeServerId)?.id
+      || manualServers[0]?.id
+      || null;
+  }
+  const select = $("#serverSelect");
+  select.replaceChildren(...manualServers.map((item) => {
     const option = document.createElement("option");
     option.value = item.id;
-    const hasFlagInName = /^[\u{1F1E6}-\u{1F1FF}]{2}/u.test(item.name || "");
-    option.textContent = `${hasFlagInName ? "" : `${item.flag || "🌐"} `}${item.name} · ${item.protocolLabel || protocolLabel(item.scheme)}`;
+    option.textContent = `${item.name} · ${item.protocolLabel || protocolLabel(item.scheme)}`;
     return option;
-  };
-  const groups = [];
-  if (manualServers.length) {
-    const manualGroup = document.createElement("optgroup");
-    manualGroup.label = "Основное подключение";
-    manualGroup.append(...manualServers.map(createOption));
-    groups.push(manualGroup);
-  }
-  if (gatewayServers.length) {
-    const gatewayGroup = document.createElement("optgroup");
-    gatewayGroup.label = `Узлы Routeva Gateway · ${gatewayServers.length.toLocaleString("ru-RU")}`;
-    gatewayGroup.append(...gatewayServers.map(createOption));
-    groups.push(gatewayGroup);
-  }
-  select.replaceChildren(...groups);
-  renderCompanionSummary([]);
-  select.value = next.activeServerId;
+  }));
+  select.value = editingServerId || "";
+
+  const server = manualServers.find((item) => item.id === editingServerId) || manualServers[0] || {};
   $("#serverName").value = server.name || "";
   $("#proxyScheme").value = server.scheme || "https";
   $("#proxyHost").value = server.host || "";
   $("#proxyPort").value = server.port || "";
   $("#proxyUsername").value = server.username || "";
   $("#proxyPassword").value = server.password || "";
-  const gatewayNode = server.source === "gateway";
-  ["serverName", "proxyScheme", "proxyHost", "proxyPort", "proxyUsername", "proxyPassword", "showPassword"].forEach((id) => {
-    $("#" + id).disabled = gatewayNode;
+  ["serverName", "proxyScheme", "proxyHost", "proxyPort", "proxyUsername", "proxyPassword", "showPassword", "saveAndTest"].forEach((id) => {
+    $("#" + id).disabled = false;
   });
-  $("#saveAndTest").disabled = gatewayNode;
-  $("#deleteServer").disabled = gatewayNode || manualServers.length <= 1;
-  if (gatewayNode) {
-    const result = $("#testResult");
-    result.className = "test-result success";
-    result.textContent = "Узел работает на Routeva Gateway — отдельная программа на компьютере не нужна";
+  $("#deleteServer").disabled = !editingServerId || manualServers.length <= 1;
+}
+
+function render(next) {
+  if (!Array.isArray(next.domainEntries)) {
+    next = { ...next, domainEntries: status?.domainEntries ?? [] };
   }
+  status = next;
+  renderServerEditor(next);
   document.querySelectorAll(".options-route-mode .route-mode-button").forEach((button) => {
     const selected = button.dataset.routeMode === next.routeMode;
     button.classList.toggle("active", selected);
@@ -464,13 +436,10 @@ $("#connectionForm").addEventListener("submit", async (event) => {
   }
 });
 
-$("#serverSelect").addEventListener("change", async (event) => {
-  try {
-    render(await send("selectServer", { id: event.target.value }));
-    toast("Сервер выбран");
-  } catch (error) {
-    toast(error.message, "error");
-  }
+$("#serverSelect").addEventListener("change", (event) => {
+  editingServerId = event.target.value;
+  renderServerEditor(status);
+  $("#testResult").className = "test-result hidden";
 });
 
 $("#newServer").addEventListener("click", () => {

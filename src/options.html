@@ -10,7 +10,7 @@
     <main class="options-shell">
       <header class="options-header">
         <div class="brand large">
-          <img src="../assets/icon-48.png?v=0.7.0" width="48" height="48" alt="" />
+          <img src="../assets/icon-48.png?v=0.7.1" width="48" height="48" alt="" />
           <div><strong>Routeva</strong><span>VPN и прокси по вашим правилам</span></div>
         </div>
         <div class="header-status"><span id="headerDot"></span><strong id="headerStatus">Настройка</strong></div>
@@ -32,11 +32,10 @@
       <section class="settings-card">
         <div class="section-heading"><span class="step">1</span><div><h2>Подключения</h2><p>Добавьте сервер вручную или вставьте ссылку подписки</p></div></div>
         <div class="server-toolbar">
-          <label class="field server-picker"><span>Активный сервер</span><select id="serverSelect" aria-label="Активный сервер"></select></label>
+          <label class="field server-picker"><span>Профиль подключения</span><select id="serverSelect" aria-label="Профиль подключения для редактирования"></select></label>
           <button class="secondary-button" id="newServer" type="button">+ Добавить</button>
           <button class="danger-button" id="deleteServer" type="button">Удалить</button>
         </div>
-        <div class="companion-summary hidden" id="companionSummary" aria-hidden="true"></div>
         <div class="connection-method-tabs" role="tablist" aria-label="Способ добавления подключения">
           <button class="connection-method-tab active" data-connection-method="manual" type="button" role="tab" aria-selected="true">Сервер вручную</button>
           <button class="connection-method-tab" data-connection-method="subscription" type="button" role="tab" aria-selected="false">Ссылка подписки</button>
@@ -66,7 +65,7 @@
           <div class="protocol-guide">
             <div><strong>В браузере</strong><span>Один защищённый HTTPS-прокси</span></div>
             <div><strong>На вашем Gateway</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
-            <p>Routeva Gateway автоматически загружает подписку и переключает туннель. Happ, Amnezia и другие программы на компьютере не требуются.</p>
+            <p>Routeva Gateway загружает подписку, а нужный узел вы выбираете в окне расширения.</p>
           </div>
         </div>
       </section>
@@ -102,9 +101,9 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Routeva 0.7.0 · ваш Gateway, без программ на ПК</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
+      <footer class="options-footer"><span>Routeva 0.7.1 · ваш Gateway</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
-    <script type="module" src="options.js?v=0.7.0.2"></script>
+    <script type="module" src="options.js?v=0.7.1"></script>
   </body>
 </html>

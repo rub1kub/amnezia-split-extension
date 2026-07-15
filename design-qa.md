@@ -1,38 +1,33 @@
-# Design QA — Routeva popup 0.6.0
+# Design QA — Routeva 0.7.1
 
 ## Evidence
 
-- Source visual truth:
-  - `C:\Users\dimar\AppData\Local\Temp\codex-clipboard-296faa9a-7180-4f39-a9cd-ca67b3f9258a.png`
-  - `C:\Users\dimar\AppData\Local\Temp\codex-clipboard-01285a0a-ae0d-4b0a-a0a6-13dbd05d7079.png`
-  - `C:\Users\dimar\AppData\Local\Temp\codex-clipboard-86240bbf-83c9-47c1-a0f2-2487cbed3d98.png`
-- Implementation screenshot: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\popup-0.6.0-routeva.png`
-- Combined full/focused comparison: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\popup-0.6.0-comparison.png`
-- Options screenshot: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\options-0.6.0-routeva.png`
-- Viewport/state: popup 380 × 700, active Netherlands server, selected-sites mode; all-internet mode also exercised.
+- Source state 1: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\01-source-country-mismatch.png`
+- Source state 2: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\02-source-foreground-flag.png`
+- Final popup: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\03-implementation-popup.png`
+- Search open: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\04-implementation-search-v3.png`
+- Final settings: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\05-implementation-options.png`
+- Focused before/after comparison: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\06-comparison-card.png`
+- Browser/state: Brave, popup 380 × 650/760, 286 Gateway nodes, selected-sites mode; settings 920 × 900.
 
-## Fidelity review
+## Findings and fixes
 
-- Fonts and typography: Segoe UI Variable hierarchy remains consistent; the status title, server name, secondary location and control labels retain clear optical weights without clipping.
-- Spacing and layout rhythm: HTTPS, flag and power switch are now exactly 50 × 30, share one baseline and use consistent six-pixel gaps. Card radius, internal padding and bottom metadata rhythm remain intact.
-- Colors and visual tokens: the real country flag is enlarged behind the card, blurred and darkened by a green overlay. White text and mint status labels preserve strong contrast.
-- Image quality and asset fidelity: the local SVG flag remains sharp in the foreground; the same real flag asset provides the soft full-card backdrop without stretching artifacts in the readable foreground control. The approved generated Routeva route mark is used consistently for the browser and interface icons.
-- Copy and content: the product is renamed Routeva and the subtitle now reads “VPN и прокси по вашим правилам”. The settings action is explicit instead of relying on an ambiguous gear.
-- Responsiveness/accessibility: the popup has no horizontal overflow; controls preserve focus styles and accessible labels. Options also report no horizontal overflow at the checked width.
+- P1 — the foreground flag competed with protocol and power controls. Removed; the country remains visible as the full-card background.
+- P1 — selecting a node caused an optimistic render, a second server response render and a success toast. Selection now waits for one response and performs one render; the toast is gone.
+- P1 — the card played an entrance animation during opening and every selection. The animation and focus ring on the whole card were removed; card height is fixed at 222 px.
+- P1 — a stored IP result could survive a Gateway switch. Each switch now resets the selected node location, increments the PAC revision, rotates the IP-check host and probes after the Gateway confirms the node.
+- P1 — 286 nodes were impractical to browse one by one. Added an always-visible search by node name, country and protocol with up to eight concise results.
+- P2 — settings mixed editable connection profiles with hundreds of subscription nodes. The selector is now “Профиль подключения” and lists only editable base connections; Gateway nodes are chosen in the popup.
+- P2 — repeated Gateway explanations increased visual noise. The requested status and compatibility blocks were removed.
+- No actionable P0–P2 visual findings remain.
 
-## Comparison history
+## Interaction and accessibility checks
 
-- Earlier P1 — controls looked unrelated because HTTPS, flag and switch had different heights and visual weight. Fixed by normalizing all three to 50 × 30 and aligning them in one row. Post-fix evidence is the focused controls row in the combined comparison.
-- Earlier P2 — the flat green card did not visually communicate the selected country. Fixed by reusing the real country flag as a blurred, low-opacity background with a dark overlay. Post-fix evidence is the card comparison at identical 340 × 222 crops.
-- Earlier P2 — the small square gear was unclear and visually detached from the minimal header. Fixed with a quiet capsule button labelled “Настройки”. Post-fix evidence is the settings comparison row.
-- No actionable P0–P2 findings remain for the supplied card and settings-button targets.
-
-## Primary interactions checked
-
-- Selected-sites → all-internet mode switches successfully.
-- All-internet mode updates card copy/count/footer and disables the community list.
-- Settings button navigates to the Routeva options page.
-- Browser console errors checked: none.
+- Previous/next remain native buttons with accessible names and disabled edge states.
+- Search has a visible label through its placeholder, native search semantics, an accessible clear button, Escape-to-close and keyboard-focusable result buttons.
+- Server result rows expose the selected state with `aria-selected` and show both country and protocol.
+- The popup no longer moves focus to the status card on open.
+- Screenshot review can confirm visible contrast and clipping, but not full screen-reader output or every system zoom level.
 
 ## Final result
 

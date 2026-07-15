@@ -13,6 +13,7 @@ import {
   countryFlag,
   countryName,
   DIRECT_PROXY_SCHEMES,
+  inferCountryCodeFromName,
   normalizeCountryCode,
   normalizeProtocol,
   normalizeProxyScheme,
@@ -21,7 +22,9 @@ import {
 
 const COUNTRY_SERVICES = Object.freeze([
   Object.freeze({ url: "https://api.country.is/", ip: "ip", country: "country" }),
-  Object.freeze({ url: "https://ipwho.is/", ip: "ip", country: "country_code" })
+  Object.freeze({ url: "https://ipwho.is/", ip: "ip", country: "country_code" }),
+  Object.freeze({ url: "https://ipapi.co/json/", ip: "ip", country: "country_code" }),
+  Object.freeze({ url: "https://ipinfo.io/json", ip: "ip", country: "country" })
 ]);
 const INTERNAL_PROXY_DOMAINS = Object.freeze(COUNTRY_SERVICES.map((service) => new URL(service.url).hostname));
 const VERSION_FEED_URL = "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/release.json";
@@ -58,6 +61,7 @@ const DEFAULT_STATE = Object.freeze({
   servers: [DEFAULT_SERVER],
   subscriptions: [],
   gateway: null,
+  proxyRevision: 0,
   updateNotice: null,
   dismissedUpdateVersion: null,
   lastError: null
@@ -82,9 +86,11 @@ function normalizeServer(server = {}, fallbackId = "server-1", fallbackName = "Ð
     subscriptionId: server.subscriptionId ? String(server.subscriptionId) : null,
     sourceNodeKey: server.sourceNodeKey ? String(server.sourceNodeKey) : null,
     gatewayNodeId: server.gatewayNodeId ? String(server.gatewayNodeId) : null,
+    declaredCountryCode: normalizeCountryCode(server.declaredCountryCode || inferCountryCodeFromName(server.name)),
     countryCode,
     countryName: String(server.countryName || (countryCode ? countryName(countryCode) : "")),
-    exitIp: String(server.exitIp || "")
+    exitIp: String(server.exitIp || ""),
+    locationCheckedAt: server.locationCheckedAt || null
   };
 }
 
@@ -139,6 +145,7 @@ function mergeState(saved = {}) {
     ...DEFAULT_STATE,
     ...saved,
     routeMode: saved.routeMode === "all" ? "all" : "selected",
+    proxyRevision: Number(saved.proxyRevision) || 0,
     servers,
     activeServerId,
     communityDomains: [...(saved.communityDomains ?? [])],
@@ -257,7 +264,8 @@ async function applyProxy(providedState) {
     proxyHost: server.host,
     proxyPort: server.port,
     proxyScheme: server.scheme,
-    routeMode: state.routeMode
+    routeMode: state.routeMode,
+    configRevision: state.proxyRevision
   });
 
   await chrome.proxy.settings.set({
@@ -464,23 +472,35 @@ async function selectServer(id) {
     const selected = synced.servers.find((item) => item.source === "gateway" && item.sourceNodeKey === nodeName)
       || synced.servers.find((item) => item.id === gateway.proxyServerId)
       || synced.servers[0];
+    const servers = synced.servers.map((item) => item.id === selected.id
+      ? normalizeServer({ ...item, countryCode: "", countryName: "", exitIp: "", locationCheckedAt: null })
+      : item);
     const next = await saveState({
       ...synced,
+      servers,
       activeServerId: selected.id,
       configured: isServerConfigured(selected),
+      proxyRevision: state.proxyRevision + 1,
       lastError: null
     });
     await applyProxy(next);
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const located = await probeActiveServerLocation(next).catch(() => next);
     return getPublicStatus(null, located, true);
   }
+  const servers = state.servers.map((item) => item.id === server.id
+    ? normalizeServer({ ...item, countryCode: "", countryName: "", exitIp: "", locationCheckedAt: null })
+    : item);
   const next = await saveState({
     ...state,
+    servers,
     activeServerId: server.id,
     configured: isServerConfigured(server),
+    proxyRevision: state.proxyRevision + 1,
     lastError: null
   });
   await applyProxy(next);
+  await new Promise((resolve) => setTimeout(resolve, 300));
   const located = await probeActiveServerLocation(next).catch(() => next);
   return getPublicStatus(null, located, true);
 }
@@ -503,9 +523,10 @@ async function deleteServer(id) {
   return getPublicStatus(null, next, true);
 }
 
-async function fetchCountry(marker) {
+async function fetchCountry(marker, offset = 0) {
   let lastError = null;
-  for (const service of COUNTRY_SERVICES) {
+  const orderedServices = COUNTRY_SERVICES.map((_, index) => COUNTRY_SERVICES[(index + offset) % COUNTRY_SERVICES.length]);
+  for (const service of orderedServices) {
     try {
       const url = new URL(service.url);
       url.searchParams.set(marker, Date.now());
@@ -536,7 +557,8 @@ async function saveServerLocation(state, serverId, location) {
         ...server,
         countryCode: location.countryCode,
         countryName: location.countryName,
-        exitIp: location.ip
+        exitIp: location.ip,
+        locationCheckedAt: new Date().toISOString()
       })
     : server);
   return saveState({ ...state, servers, lastError: null });
@@ -547,7 +569,7 @@ async function probeActiveServerLocation(providedState) {
   const server = getActiveServer(state);
   if (!state.enabled || !isServerConfigured(server)) return state;
   await applyProxy(state);
-  const location = await fetchCountry("probe");
+  const location = await fetchCountry("probe", state.proxyRevision % COUNTRY_SERVICES.length);
   return saveServerLocation(state, server.id, location);
 }
 
@@ -688,6 +710,7 @@ function syncGatewayState(state, gatewayStatus, controller) {
       subscriptionId: node.subscriptionId,
       sourceNodeKey: nodeKey,
       gatewayNodeId: node.id,
+      declaredCountryCode: inferCountryCodeFromName(node.name),
       countryCode: old?.countryCode || "",
       countryName: old?.countryName || "",
       exitIp: old?.exitIp || ""
@@ -846,6 +869,7 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
         source: server.source,
         subscriptionId: server.subscriptionId,
         gatewayNodeId: server.gatewayNodeId,
+        declaredCountryCode: server.declaredCountryCode,
         countryCode: server.countryCode,
         countryName: server.countryName,
         flag: countryFlag(server.countryCode),

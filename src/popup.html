@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Routeva</title>
-    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="ui.css?v=0.7.1" />
   </head>
   <body class="popup-page">
     <main class="popup-shell">
       <header class="app-header">
         <div class="brand">
-          <img src="../assets/icon-32.png?v=0.7.0" width="32" height="32" alt="" />
+          <img src="../assets/icon-32.png?v=0.7.1" width="32" height="32" alt="" />
           <div>
             <strong>Routeva</strong>
             <span>VPN и прокси по вашим правилам</span>
@@ -25,13 +25,32 @@
         <button id="dismissUpdate" type="button" aria-label="Скрыть уведомление">×</button>
       </aside>
 
-      <section class="server-deck" id="serverDeck" aria-label="Серверы. Листайте влево или вправо">
+      <section class="server-deck" id="serverDeck" aria-label="Выбранный сервер">
         <div class="server-track" id="serverTrack"></div>
         <button class="power-switch" id="masterToggle" type="button" role="switch" aria-checked="true">
           <span></span>
         </button>
       </section>
-      <div class="server-pagination"><div class="server-dots" id="serverDots"></div><span id="serverPosition">1 из 1 · листайте карточку</span></div>
+      <nav class="server-pagination" aria-label="Переключение серверов">
+        <button class="server-arrow" id="serverPrev" type="button" aria-label="Предыдущий сервер">
+          <img src="../assets/icons/caret-left.svg" width="16" height="16" alt="" />
+        </button>
+        <span id="serverPosition" aria-live="polite">1 из 1</span>
+        <button class="server-arrow" id="serverNext" type="button" aria-label="Следующий сервер">
+          <img src="../assets/icons/caret-right.svg" width="16" height="16" alt="" />
+        </button>
+      </nav>
+
+      <section class="server-search" id="serverSearch">
+        <label class="server-search-field" for="serverSearchInput">
+          <img src="../assets/icons/magnifying-glass.svg" width="16" height="16" alt="" />
+          <input id="serverSearchInput" type="search" placeholder="Найти сервер или страну" autocomplete="off" spellcheck="false" />
+          <button class="server-search-clear hidden" id="serverSearchClear" type="button" aria-label="Очистить поиск">
+            <img src="../assets/icons/x.svg" width="14" height="14" alt="" />
+          </button>
+        </label>
+        <div class="server-search-results hidden" id="serverSearchResults" role="listbox" aria-label="Результаты поиска серверов"></div>
+      </section>
 
       <div class="route-mode" role="group" aria-label="Режим VPN">
         <button class="route-mode-button active" data-route-mode="selected" type="button" aria-pressed="true">По списку сайтов</button>
@@ -61,6 +80,6 @@
       <p class="notice hidden" id="notice" role="status"></p>
       <footer id="routeFooter"><span class="privacy-dot"></span> Остальные сайты подключаются напрямую</footer>
     </main>
-    <script type="module" src="popup.js?v=0.7.0.3"></script>
+    <script type="module" src="popup.js?v=0.7.1"></script>
   </body>
 </html>

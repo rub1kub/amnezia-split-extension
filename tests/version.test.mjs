@@ -45,3 +45,19 @@ test("keeps gateway node cards synchronized automatically", async () => {
   assert.match(background, /create\("sync-routeva-gateway",\s*\{\s*periodInMinutes:\s*60\s*\}\)/);
   assert.match(background, /alarm\.name === "sync-routeva-gateway"/);
 });
+
+test("does not re-probe a known exit on every popup open", async () => {
+  const popup = await readFile(new URL("../src/popup.js", import.meta.url), "utf8");
+  assert.match(popup, /next\.configured && !next\.activeServer\?\.exitIp/);
+  assert.doesNotMatch(popup, /showNotice\(`Выбран:/);
+});
+
+test("keeps the popup server card stable and searchable", async () => {
+  const [popup, css] = await Promise.all([
+    readFile(new URL("../src/popup.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/ui.css", import.meta.url), "utf8")
+  ]);
+  assert.match(popup, /function renderServerSearch\(\)/);
+  assert.doesNotMatch(popup, /country-flag/);
+  assert.doesNotMatch(css, /server-card-in/);
+});

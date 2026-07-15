@@ -80,3 +80,13 @@ test("PAC all-sites mode proxies arbitrary hosts but keeps bypasses direct", () 
   assert.match(pac, /if \(ROUTE_ALL\) return "HTTPS proxy\.example:443"/);
   assert.match(pac, /if \(BYPASS\[candidates\[b\]\]\) return "DIRECT"/);
 });
+
+test("PAC embeds a revision so switching gateway nodes refreshes browser proxy state", () => {
+  const pac = generatePac({
+    domains: ["openai.com"],
+    proxyHost: "proxy.example",
+    proxyPort: 443,
+    configRevision: 17
+  });
+  assert.match(pac, /var CONFIG_REVISION = 17/);
+});

@@ -1,5 +1,9 @@
 const $ = (selector) => document.querySelector(selector);
-const PREVIEW = new URLSearchParams(location.search).has("preview");
+const PREVIEW_PARAMS = new URLSearchParams(location.search);
+const PREVIEW = PREVIEW_PARAMS.has("preview");
+const PREVIEW_MANY = PREVIEW_PARAMS.has("many");
+const PREVIEW_AUTO_NEXT = PREVIEW_PARAMS.has("autonext");
+const PREVIEW_SEARCH = PREVIEW_PARAMS.get("search") || "";
 
 const PREVIEW_STATUS = {
   enabled: true,
@@ -18,16 +22,42 @@ const PREVIEW_STATUS = {
   subscriptionCards: [],
   updateNotice: {
     kind: "installed",
-    version: "0.7.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.0"
+    version: "0.7.1",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.1"
   }
 };
 
+if (PREVIEW_MANY) {
+  const countryCodes = ["HK", "DE", "NL", "SE", "US", "JP"];
+  PREVIEW_STATUS.servers = Array.from({ length: 286 }, (_, index) => {
+    const code = countryCodes[index % countryCodes.length];
+    return {
+      id: `gateway-node-${index + 1}`,
+      name: index === 0 ? "HK ⭐ Гонконг" : `${code} · Сервер ${index + 1}`,
+      protocolLabel: index % 3 === 0 ? "VLESS" : "Hysteria 2",
+      declaredCountryCode: code,
+      countryCode: index === 0 ? "NL" : code,
+      countryName: index === 0 ? "Нидерланды" : new Intl.DisplayNames(["ru"], { type: "region" }).of(code),
+      flag: "",
+      exitIp: index === 0 ? "89.105.206.149" : "203.0.113.10",
+      source: "gateway"
+    };
+  });
+  PREVIEW_STATUS.activeServerId = PREVIEW_STATUS.servers[0].id;
+  PREVIEW_STATUS.activeServer = PREVIEW_STATUS.servers[0];
+  PREVIEW_STATUS.activeCount = 1687;
+  PREVIEW_STATUS.updateNotice = null;
+}
+
 let currentHost = "";
 let currentStatus = null;
-let carouselTimer = null;
-let renderingCarousel = false;
 let currentDeckItems = [];
+let currentDeckIndex = 0;
+let navigationBusy = false;
+let swipeStartX = null;
+const regionNames = typeof Intl.DisplayNames === "function"
+  ? new Intl.DisplayNames(["ru"], { type: "region" })
+  : null;
 
 async function send(type, payload = {}) {
   if (PREVIEW) {
@@ -96,6 +126,28 @@ function protocolLabel(protocol) {
   }[protocol] || String(protocol || "").toUpperCase();
 }
 
+function countryNameByCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return "";
+  try {
+    return regionNames?.of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function searchableServerText(server) {
+  return [
+    server.name,
+    server.protocolLabel,
+    server.protocol,
+    server.countryName,
+    countryNameByCode(server.declaredCountryCode),
+    server.declaredCountryCode,
+    server.countryCode
+  ].filter(Boolean).join(" ").toLocaleLowerCase("ru-RU");
+}
+
 function openSubscriptionSetup(subscriptionId) {
   const target = `options.html?connect=${encodeURIComponent(subscriptionId)}`;
   if (PREVIEW) {
@@ -123,30 +175,22 @@ function createServerSlide(server, status) {
   const copy = activeCopy(status);
   const slide = makeElement("article", `status-card server-slide${copy.active ? "" : " is-off"}`);
   slide.dataset.serverId = server.id;
-  const countryCode = String(server.countryCode || "").toLowerCase();
-  if (/^[a-z]{2}$/.test(countryCode)) {
+  const actualCountryCode = String(server.countryCode || "").toLowerCase();
+  const declaredCountryCode = String(server.declaredCountryCode || "").toLowerCase();
+  const visualCountryCode = declaredCountryCode || actualCountryCode;
+  if (/^[a-z]{2}$/.test(visualCountryCode)) {
     slide.classList.add("has-country-backdrop");
     const backdrop = makeElement("img", "country-backdrop");
-    backdrop.src = new URL(`../assets/flags/${countryCode}.svg`, location.href).href;
+    backdrop.src = new URL(`../assets/flags/${visualCountryCode}.svg`, location.href).href;
     backdrop.alt = "";
     backdrop.setAttribute("aria-hidden", "true");
     slide.append(backdrop);
   }
   const top = makeElement("div", "server-slide-top");
   const protocol = makeElement("span", "protocol-pill", server.protocolLabel || String(server.scheme || "HTTPS").toUpperCase());
-  const flag = /^[a-z]{2}$/.test(countryCode)
-    ? makeElement("img", "country-flag country-flag-image")
-    : makeElement("span", "country-flag", "🌐");
   const isActive = server.id === status.activeServerId;
   const pendingLocation = isActive && !server.countryName;
-  flag.title = server.countryName || (pendingLocation ? "Определяем страну выхода" : "Страна определится при выборе");
-  if (flag instanceof HTMLImageElement) {
-    flag.src = new URL(`../assets/flags/${countryCode}.svg`, location.href).href;
-    flag.alt = server.countryName ? `Флаг: ${server.countryName}` : "Флаг страны сервера";
-    flag.width = 28;
-    flag.height = 21;
-  }
-  top.append(protocol, flag);
+  top.append(protocol);
 
   const copyWrap = makeElement("div", "status-copy");
   copyWrap.append(
@@ -156,12 +200,14 @@ function createServerSlide(server, status) {
   );
   const serverInfo = makeElement("div", "server-slide-info");
   const serverName = makeElement("strong", "", server.name || "Без названия");
+  const declaredCountryName = countryNameByCode(server.declaredCountryCode);
+  const visibleCountryName = declaredCountryName || server.countryName;
   const locationText = makeElement(
     "span",
     "",
-    server.countryName
-      ? `${server.countryName}${server.exitIp ? ` · ${server.exitIp}` : ""}`
-      : pendingLocation ? "Определяем страну…" : "Страна определится при выборе"
+    visibleCountryName
+      ? `${visibleCountryName}${server.exitIp ? ` · ${server.exitIp}` : ""}`
+      : pendingLocation ? "Определяем фактический выход…" : "Выход определится при выборе"
   );
   serverInfo.append(serverName, locationText);
   const count = makeElement("div", "route-count");
@@ -193,54 +239,118 @@ function createSubscriptionSlide(subscription) {
   return slide;
 }
 
-function closestSlideIndex() {
-  const track = $("#serverTrack");
-  const slides = [...track.children];
-  if (!slides.length) return 0;
-  return slides.reduce((best, slide, index) =>
-    Math.abs(slide.offsetLeft - track.scrollLeft) < Math.abs(slides[best].offsetLeft - track.scrollLeft)
-      ? index
-      : best, 0);
+function createDeckSlide(item, status) {
+  return item.kind === "subscription"
+    ? createSubscriptionSlide(item)
+    : createServerSlide(item, status);
 }
 
 function updateCarouselMeta(index) {
-  const dots = [...$("#serverDots").children];
-  dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
-  $("#serverPosition").textContent = `${index + 1} из ${Math.max(1, dots.length)} · листайте карточку`;
+  const total = Math.max(1, currentDeckItems.length);
+  $("#serverPosition").textContent = `${index + 1} из ${total}`;
+  $("#serverPrev").disabled = navigationBusy || index <= 0 || total <= 1;
+  $("#serverNext").disabled = navigationBusy || index >= total - 1 || total <= 1;
   const showingSubscription = currentDeckItems[index]?.kind === "subscription";
   $("#masterToggle").classList.toggle("hidden", showingSubscription);
   $("#serverDeck").classList.toggle("showing-subscription", showingSubscription);
+  $("#serverDeck").setAttribute("aria-label", currentDeckItems[index]?.name
+    ? `Сервер ${index + 1} из ${total}: ${currentDeckItems[index].name}`
+    : `Сервер ${index + 1} из ${total}`);
+}
+
+function renderDeckIndex(status, index) {
+  const track = $("#serverTrack");
+  currentDeckIndex = Math.min(Math.max(0, index), Math.max(0, currentDeckItems.length - 1));
+  const item = currentDeckItems[currentDeckIndex];
+  track.replaceChildren(item ? createDeckSlide(item, status) : createServerSlide(status.activeServer || {}, status));
+  updateCarouselMeta(currentDeckIndex);
 }
 
 function renderServerDeck(status) {
-  const track = $("#serverTrack");
-  renderingCarousel = true;
   currentDeckItems = [
     ...status.servers.map((server) => ({ ...server, kind: "server", selectable: true })),
     ...(status.subscriptionCards || [])
   ];
-  track.replaceChildren(...currentDeckItems.map((item) => item.kind === "subscription"
-    ? createSubscriptionSlide(item)
-    : createServerSlide(item, status)));
-  const dots = $("#serverDots");
-  dots.replaceChildren(...currentDeckItems.map((item, index) => {
-    const dot = makeElement("button", "server-dot");
-    dot.type = "button";
-    dot.setAttribute("aria-label", item.kind === "subscription"
-      ? `Открыть подписку ${item.name}`
-      : `Выбрать сервер ${item.name}`);
-    dot.addEventListener("click", () => {
-      track.children[index]?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
-    });
-    return dot;
-  }));
   const activeIndex = Math.max(0, status.servers.findIndex((server) => server.id === status.activeServerId));
-  requestAnimationFrame(() => {
-    const activeSlide = track.children[activeIndex];
-    if (activeSlide) track.scrollLeft = activeSlide.offsetLeft;
-    updateCarouselMeta(activeIndex);
-    renderingCarousel = false;
-  });
+  renderDeckIndex(status, activeIndex);
+  renderServerSearch();
+}
+
+async function selectDeckIndex(nextIndex) {
+  if (!requireStatus() || navigationBusy) return;
+  nextIndex = Math.min(Math.max(0, nextIndex), currentDeckItems.length - 1);
+  if (nextIndex === currentDeckIndex) return;
+  const item = currentDeckItems[nextIndex];
+  if (!item || item.kind !== "server") {
+    renderDeckIndex(currentStatus, nextIndex);
+    return;
+  }
+  if (item.id === currentStatus.activeServerId) {
+    renderDeckIndex(currentStatus, nextIndex);
+    return;
+  }
+  navigationBusy = true;
+  $("#serverDeck").setAttribute("aria-busy", "true");
+  updateCarouselMeta(currentDeckIndex);
+  try {
+    render(await send("selectServer", { id: item.id }));
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    navigationBusy = false;
+    $("#serverDeck").removeAttribute("aria-busy");
+    updateCarouselMeta(currentDeckIndex);
+  }
+}
+
+function navigateDeck(step) {
+  return selectDeckIndex(currentDeckIndex + step);
+}
+
+function closeServerSearch({ clear = false } = {}) {
+  if (clear) $("#serverSearchInput").value = "";
+  $("#serverSearchResults").classList.add("hidden");
+  $("#serverSearchClear").classList.toggle("hidden", !$("#serverSearchInput").value);
+}
+
+function renderServerSearch() {
+  const input = $("#serverSearchInput");
+  const results = $("#serverSearchResults");
+  const query = input.value.trim().toLocaleLowerCase("ru-RU");
+  $("#serverSearchClear").classList.toggle("hidden", !query);
+  results.replaceChildren();
+  if (!query) {
+    results.classList.add("hidden");
+    return;
+  }
+
+  const matches = currentDeckItems
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.kind === "server" && searchableServerText(item).includes(query))
+    .slice(0, 8);
+
+  if (!matches.length) {
+    results.append(makeElement("p", "server-search-empty", "Ничего не найдено"));
+  } else {
+    matches.forEach(({ item, index }) => {
+      const button = makeElement("button", "server-search-result");
+      button.type = "button";
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(item.id === currentStatus?.activeServerId));
+      const copy = makeElement("span", "");
+      copy.append(
+        makeElement("strong", "", item.name || "Без названия"),
+        makeElement("small", "", `${countryNameByCode(item.declaredCountryCode) || item.countryName || "Страна не указана"} · ${item.protocolLabel || protocolLabel(item.protocol)}`)
+      );
+      button.append(copy);
+      button.addEventListener("click", async () => {
+        closeServerSearch({ clear: true });
+        await selectDeckIndex(index);
+      });
+      results.append(button);
+    });
+  }
+  results.classList.remove("hidden");
 }
 
 function render(status) {
@@ -291,15 +401,14 @@ async function getActiveHost() {
 async function refresh() {
   currentHost = await getActiveHost();
   let next = await send("getStatus", { host: currentHost });
-  render(next);
-  if (!PREVIEW && next.enabled && next.configured && !next.activeServer?.countryCode) {
+  if (!PREVIEW && next.enabled && next.configured && !next.activeServer?.exitIp) {
     try {
       next = await send("probeLocation", { host: currentHost });
-      render(next);
     } catch (error) {
       showNotice("Не удалось определить страну. Повторим при следующем открытии.", "error");
     }
   }
+  render(next);
 }
 
 $("#masterToggle").addEventListener("click", async () => {
@@ -350,23 +459,42 @@ document.querySelectorAll(".route-mode-button").forEach((button) => {
   });
 });
 
-$("#serverTrack").addEventListener("scroll", () => {
-  if (renderingCarousel) return;
-  clearTimeout(carouselTimer);
-  carouselTimer = setTimeout(async () => {
-    if (!currentStatus) return;
-    const index = closestSlideIndex();
-    updateCarouselMeta(index);
-    const server = currentDeckItems[index];
-    if (!server || server.kind !== "server" || server.id === currentStatus.activeServerId) return;
-    try {
-      render(await send("selectServer", { id: server.id }));
-      showNotice(`Выбран: ${server.name}`, "success");
-    } catch (error) {
-      showNotice(error.message, "error");
-    }
-  }, 140);
-}, { passive: true });
+$("#serverPrev").addEventListener("click", () => navigateDeck(-1));
+$("#serverNext").addEventListener("click", () => navigateDeck(1));
+
+$("#serverSearchInput").addEventListener("input", renderServerSearch);
+$("#serverSearchInput").addEventListener("focus", renderServerSearch);
+$("#serverSearchInput").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeServerSearch({ clear: true });
+    event.currentTarget.blur();
+  }
+});
+$("#serverSearchClear").addEventListener("click", () => {
+  closeServerSearch({ clear: true });
+  $("#serverSearchInput").focus();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest("#serverSearch")) closeServerSearch();
+});
+
+$("#serverDeck").addEventListener("pointerdown", (event) => {
+  if (event.target.closest("button")) return;
+  swipeStartX = event.clientX;
+});
+
+$("#serverDeck").addEventListener("pointerup", (event) => {
+  if (swipeStartX === null) return;
+  const distance = event.clientX - swipeStartX;
+  swipeStartX = null;
+  if (Math.abs(distance) < 42) return;
+  navigateDeck(distance > 0 ? -1 : 1);
+});
+
+$("#serverDeck").addEventListener("pointercancel", () => {
+  swipeStartX = null;
+});
 
 $("#dismissUpdate").addEventListener("click", async () => {
   if (!requireStatus()) return;
@@ -384,4 +512,12 @@ $("#openSettings").addEventListener("click", () => {
   else chrome.runtime.openOptionsPage();
 });
 
-refresh().catch((error) => showNotice(error.message, "error"));
+refresh()
+  .then(() => {
+    if (PREVIEW_SEARCH) {
+      $("#serverSearchInput").value = PREVIEW_SEARCH;
+      renderServerSearch();
+    }
+    if (PREVIEW_AUTO_NEXT) requestAnimationFrame(() => $("#serverNext").click());
+  })
+  .catch((error) => showNotice(error.message, "error"));
