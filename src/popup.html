@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Amnezia Split</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="popup-page">
+    <main class="popup-shell">
+      <header class="app-header">
+        <div class="brand">
+          <img src="../assets/icon-32.png" width="32" height="32" alt="" />
+          <div>
+            <strong>Amnezia Split</strong>
+            <span>VPN только где нужен</span>
+          </div>
+        </div>
+        <button class="icon-button" id="openSettings" type="button" aria-label="Открыть настройки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Zm8.1-2.1-1.6-.92a6.8 6.8 0 0 0 0-.46l1.6-.92a1 1 0 0 0 .37-1.37l-1.5-2.6a1 1 0 0 0-1.37-.36l-1.6.92a7.1 7.1 0 0 0-.4-.23V5.35a1 1 0 0 0-1-1h-3a1 1 0 0 0-1 1V7.2l-.4.23-1.6-.92a1 1 0 0 0-1.37.37l-1.5 2.6a1 1 0 0 0 .37 1.36l1.6.93a6.8 6.8 0 0 0 0 .46l-1.6.92a1 1 0 0 0-.37 1.37l1.5 2.6a1 1 0 0 0 1.37.36l1.6-.92.4.23v1.85a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1V16.8l.4-.23 1.6.92a1 1 0 0 0 1.37-.37l1.5-2.6a1 1 0 0 0-.37-1.36Z"/></svg>
+        </button>
+      </header>
+
+      <section class="status-card" id="statusCard">
+        <div class="status-copy">
+          <span class="eyebrow" id="statusEyebrow">ГОТОВ К РАБОТЕ</span>
+          <h1 id="statusTitle">VPN включён</h1>
+          <p id="statusText">Только выбранные сайты</p>
+        </div>
+        <button class="power-switch" id="masterToggle" type="button" role="switch" aria-checked="true">
+          <span></span>
+        </button>
+        <div class="route-count"><strong id="activeCount">0</strong><span>доменов через VPN</span></div>
+      </section>
+
+      <section class="panel current-site" id="currentSitePanel">
+        <div class="site-mark" id="siteMark">A</div>
+        <div class="site-copy">
+          <span>Текущий сайт</span>
+          <strong id="currentHost">—</strong>
+        </div>
+        <button class="mini-toggle" id="siteToggle" type="button" role="switch" aria-checked="false"><span></span></button>
+      </section>
+
+      <section class="panel list-panel">
+        <div class="list-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.75h10A2.25 2.25 0 0 1 19.25 7v10A2.25 2.25 0 0 1 17 19.25H7A2.25 2.25 0 0 1 4.75 17V7A2.25 2.25 0 0 1 7 4.75Zm2.1 4.1a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm2.1-.75a.75.75 0 0 0 0 1.5h5.2a.75.75 0 0 0 0-1.5h-5.2Zm-2.1 3.9a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm2.1-.75a.75.75 0 0 0 0 1.5h5.2a.75.75 0 0 0 0-1.5h-5.2Zm-2.1 3.9a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm2.1-.75a.75.75 0 0 0 0 1.5h5.2a.75.75 0 0 0 0-1.5h-5.2Z"/></svg>
+        </div>
+        <div class="site-copy">
+          <span>Готовый список</span>
+          <strong id="communityLabel">Сайты для России</strong>
+        </div>
+        <button class="mini-toggle" id="communityToggle" type="button" role="switch" aria-checked="true"><span></span></button>
+      </section>
+
+      <p class="notice hidden" id="notice" role="status"></p>
+      <footer><span class="privacy-dot"></span> Остальные сайты подключаются напрямую</footer>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

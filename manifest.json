@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Amnezia Split — VPN по сайтам",
+  "short_name": "Amnezia Split",
+  "version": "0.1.0",
+  "description": "Направляет только выбранные сайты через ваш сервер Amnezia.",
+  "permissions": [
+    "alarms",
+    "proxy",
+    "storage",
+    "tabs",
+    "webRequest",
+    "webRequestAuthProvider"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Amnezia Split",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  },
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": true
+  },
+  "incognito": "spanning"
+}

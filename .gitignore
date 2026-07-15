@@ -1,0 +1,7 @@
+dist/
+.env
+*.key
+*.pem
+*credentials*
+.DS_Store
+Thumbs.db

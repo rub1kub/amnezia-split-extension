@@ -1,0 +1,10 @@
+{
+  "name": "amnezia-split-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1"
+  }
+}
