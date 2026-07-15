@@ -18,14 +18,20 @@
 
       <section class="welcome">
         <span class="eyebrow">ПРОЩЕ НЕКУДА</span>
-        <h1>Один пароль — и готово</h1>
-        <p>Сайты из списка пойдут через ваш сервер. Всё остальное останется на обычном подключении.</p>
+        <h1>Ваши серверы — в одном месте</h1>
+        <p>Выберите сервер, и сайты из списка пойдут через него. Всё остальное останется на обычном подключении.</p>
       </section>
 
       <section class="settings-card">
-        <div class="section-heading"><span class="step">1</span><div><h2>Подключение</h2><p>Данные хранятся только в этом браузере</p></div></div>
+        <div class="section-heading"><span class="step">1</span><div><h2>Серверы</h2><p>Пароли хранятся только в этом браузере</p></div></div>
+        <div class="server-toolbar">
+          <label class="field server-picker"><span>Активный сервер</span><select id="serverSelect" aria-label="Активный сервер"></select></label>
+          <button class="secondary-button" id="newServer" type="button">+ Добавить</button>
+          <button class="danger-button" id="deleteServer" type="button">Удалить</button>
+        </div>
         <form id="connectionForm">
           <div class="field-grid">
+            <label class="field wide"><span>Название</span><input id="serverName" name="name" type="text" autocomplete="off" placeholder="Например, Нидерланды" required /></label>
             <label class="field wide"><span>Сервер</span><input id="proxyHost" name="host" type="text" autocomplete="off" spellcheck="false" placeholder="proxy.example.com" required /></label>
             <label class="field"><span>Порт</span><input id="proxyPort" name="port" type="number" min="1" max="65535" inputmode="numeric" required /></label>
             <label class="field"><span>Логин</span><input id="proxyUsername" name="username" type="text" autocomplete="username" required /></label>
@@ -51,7 +57,7 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Amnezia Split 0.1.0</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Список доменов: itdoginfo</a></footer>
+      <footer class="options-footer"><span>Amnezia Split 0.2.0 · обновляется автоматически</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Список доменов: itdoginfo</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
     <script type="module" src="options.js"></script>

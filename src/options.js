@@ -8,14 +8,22 @@ const PREVIEW_STATUS = {
   communityUpdatedAt: "2026-07-15T00:00:00.000Z",
   customDomains: ["example.com", "claude.ai"],
   bypassDomains: ["status.openai.com"],
-  proxy: {
+  activeServerId: "server-1",
+  activeServer: {
+    id: "server-1",
+    name: "Основной сервер",
     host: "ton4.pro",
     port: 18443,
     username: "amnezia-browser",
     password: ""
-  }
+  },
+  servers: [
+    { id: "server-1", name: "Основной сервер", host: "ton4.pro", port: 18443, username: "amnezia-browser", password: "" },
+    { id: "server-2", name: "Резервный", host: "backup.example.com", port: 443, username: "user", password: "demo" }
+  ]
 };
 let status = null;
+let editingServerId = null;
 
 async function send(type, payload = {}) {
   if (PREVIEW) {
@@ -74,10 +82,22 @@ function renderChips(container, domains, type, emptyText) {
 
 function render(next) {
   status = next;
-  $("#proxyHost").value = next.proxy.host || "";
-  $("#proxyPort").value = next.proxy.port || "";
-  $("#proxyUsername").value = next.proxy.username || "";
-  $("#proxyPassword").value = next.proxy.password || "";
+  editingServerId = next.activeServerId;
+  const server = next.activeServer;
+  const select = $("#serverSelect");
+  select.replaceChildren(...next.servers.map((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.name;
+    return option;
+  }));
+  select.value = next.activeServerId;
+  $("#serverName").value = server.name || "";
+  $("#proxyHost").value = server.host || "";
+  $("#proxyPort").value = server.port || "";
+  $("#proxyUsername").value = server.username || "";
+  $("#proxyPassword").value = server.password || "";
+  $("#deleteServer").disabled = next.servers.length <= 1;
   setSwitch($("#optionsCommunityToggle"), next.useCommunityList);
   $("#listMeta").textContent = `${next.communityCount.toLocaleString("ru-RU")} доменов · ${
     next.communityUpdatedAt ? new Date(next.communityUpdatedAt).toLocaleDateString("ru-RU") : "не обновлялся"
@@ -110,8 +130,10 @@ $("#connectionForm").addEventListener("submit", async (event) => {
   result.className = "test-result loading";
   result.textContent = "Создаём защищённое подключение";
   try {
-    await send("saveProxy", {
-      proxy: {
+    await send("saveServer", {
+      server: {
+        id: editingServerId,
+        name: $("#serverName").value,
         host: $("#proxyHost").value,
         port: Number($("#proxyPort").value),
         username: $("#proxyUsername").value,
@@ -129,6 +151,38 @@ $("#connectionForm").addEventListener("submit", async (event) => {
   } finally {
     button.disabled = false;
     button.querySelector("span").textContent = "Сохранить и проверить";
+  }
+});
+
+$("#serverSelect").addEventListener("change", async (event) => {
+  try {
+    render(await send("selectServer", { id: event.target.value }));
+    toast("Сервер выбран");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+});
+
+$("#newServer").addEventListener("click", () => {
+  editingServerId = null;
+  $("#serverName").value = `Сервер ${status.servers.length + 1}`;
+  $("#proxyHost").value = "";
+  $("#proxyPort").value = "";
+  $("#proxyUsername").value = "";
+  $("#proxyPassword").value = "";
+  $("#serverName").focus();
+  $("#testResult").className = "test-result hidden";
+});
+
+$("#deleteServer").addEventListener("click", async () => {
+  if (!editingServerId || status.servers.length <= 1) return;
+  const server = status.servers.find((item) => item.id === editingServerId);
+  if (!confirm(`Удалить сервер «${server?.name || "Без названия"}»?`)) return;
+  try {
+    render(await send("deleteServer", { id: editingServerId }));
+    toast("Сервер удалён");
+  } catch (error) {
+    toast(error.message, "error");
   }
 });
 

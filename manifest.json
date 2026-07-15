@@ -2,8 +2,9 @@
   "manifest_version": 3,
   "name": "Amnezia Split — VPN по сайтам",
   "short_name": "Amnezia Split",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Направляет только выбранные сайты через ваш сервер Amnezia.",
+  "update_url": "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/updates.xml",
   "permissions": [
     "alarms",
     "proxy",
