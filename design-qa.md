@@ -1,34 +1,48 @@
-# Design QA — Routeva 0.7.1
+# Design QA — Routeva 0.8.0
+
+## Направление
+
+Редизайн построен вокруг одного понятного сценария: пользователь сначала видит состояние VPN и активный сервер, затем выбирает режим и сайты. В настройках самым заметным и первым стал простой путь через ссылку подписки; ручная настройка сохранена как отдельный сценарий.
+
+Визуальные ориентиры: спокойная иерархия macOS-приложений из MacApp Supply, принципы лаконичного Apple-подхода из emilkowalski/skills и локальные SVG-иконки Phosphor без добавления UI-фреймворка.
 
 ## Evidence
 
-- Source state 1: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\01-source-country-mismatch.png`
-- Source state 2: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\02-source-foreground-flag.png`
-- Final popup: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\03-implementation-popup.png`
-- Search open: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\04-implementation-search-v3.png`
-- Final settings: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\05-implementation-options.png`
-- Focused before/after comparison: `C:\Users\dimar\OneDrive\Документы\Amnezia Extension\artifacts\audit\06-comparison-card.png`
-- Browser/state: Brave, popup 380 × 650/760, 286 Gateway nodes, selected-sites mode; settings 920 × 900.
+- Текущий popup до изменений: `artifacts/audit-v0.8.0/01-current-popup.png`
+- Текущие настройки до изменений: `artifacts/audit-v0.8.0/02-current-options-top.png`
+- Подписка до изменений: `artifacts/audit-v0.8.0/04-current-subscription.png`
+- Финальный popup: `artifacts/audit-v0.8.0/13-final-popup.png`
+- Финальные настройки 1280 × 800: `artifacts/audit-v0.8.0/14-final-options-1280x800.png`
+- Сравнение popup до/после: `artifacts/audit-v0.8.0/15-comparison-popup-final.png`
+- Поиск серверов: `artifacts/audit-v0.8.0/10-redesigned-popup-search.png`
+- Маршрутизация: `artifacts/audit-v0.8.0/07-redesigned-options-routing.png`
+- Ручное подключение: `artifacts/audit-v0.8.0/08-redesigned-options-manual.png`
+- Просмотр доменов: `artifacts/audit-v0.8.0/09-redesigned-domain-explorer.png`
 
-## Findings and fixes
+## Проверенные шаги
 
-- P1 — the foreground flag competed with protocol and power controls. Removed; the country remains visible as the full-card background.
-- P1 — selecting a node caused an optimistic render, a second server response render and a success toast. Selection now waits for one response and performs one render; the toast is gone.
-- P1 — the card played an entrance animation during opening and every selection. The animation and focus ring on the whole card were removed; card height is fixed at 222 px.
-- P1 — a stored IP result could survive a Gateway switch. Each switch now resets the selected node location, increments the PAC revision, rotates the IP-check host and probes after the Gateway confirms the node.
-- P1 — 286 nodes were impractical to browse one by one. Added an always-visible search by node name, country and protocol with up to eight concise results.
-- P2 — settings mixed editable connection profiles with hundreds of subscription nodes. The selector is now “Профиль подключения” and lists only editable base connections; Gateway nodes are chosen in the popup.
-- P2 — repeated Gateway explanations increased visual noise. The requested status and compatibility blocks were removed.
-- No actionable P0–P2 visual findings remain.
+1. Открытие popup — здоровое состояние: статус, сервер, страна, IP и режим видны без прокрутки.
+2. Поиск среди 286 серверов — здоровое состояние: поиск находит страну и протокол, список не ломает ширину popup.
+3. Выбор сервера — здоровое состояние: карточка, позиция и фон страны обновляются без рывка.
+4. Режим «Весь интернет» — здоровое состояние: копирайт и счётчик меняются, автоматический список отключается.
+5. Добавление по ссылке — здоровое состояние: это первый и самый простой сценарий, название необязательно.
+6. Ручное подключение — здоровое состояние: сохранённые подключения и форма собраны в одном режиме.
+7. Маршрутизация и домены — здоровое состояние: режим, список, поиск и исключения читаются как один блок.
 
-## Interaction and accessibility checks
+## Исправленные риски
 
-- Previous/next remain native buttons with accessible names and disabled edge states.
-- Search has a visible label through its placeholder, native search semantics, an accessible clear button, Escape-to-close and keyboard-focusable result buttons.
-- Server result rows expose the selected state with `aria-selected` and show both country and protocol.
-- The popup no longer moves focus to the status card on open.
-- Screenshot review can confirm visible contrast and clipping, but not full screen-reader output or every system zoom level.
+- Убрана фиолетовая подсистема акцентов; состояния, фокус и действия используют единый зелёный цвет.
+- Увеличены мелкие подписи и интерактивные зоны.
+- Навигация по серверам и поиск объединены в одну панель.
+- Повтор страны в названии и строке выхода скрывается, когда фактический IP уже известен.
+- Подписка больше не раскрывает длинный список узлов по умолчанию.
+- Уведомления, карточки, поля и переключатели получили одну систему радиусов и отступов.
+- Добавлен `prefers-reduced-motion`.
 
-## Final result
+## Ограничения проверки
+
+Скриншоты подтверждают компоновку, видимый контраст, обрезание и основные состояния. Полная работа экранного диктора и все системные масштабы требуют отдельной ручной проверки в Brave.
+
+## Итог
 
 passed

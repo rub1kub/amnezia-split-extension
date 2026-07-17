@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Настройка — Routeva</title>
-    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="ui.css?v=0.8.0-r1" />
   </head>
   <body class="options-page">
     <main class="options-shell">
       <header class="options-header">
         <div class="brand large">
-          <img src="../assets/icon-48.png?v=0.7.1" width="48" height="48" alt="" />
-          <div><strong>Routeva</strong><span>VPN и прокси по вашим правилам</span></div>
+          <img src="../assets/icon-48.png?v=0.8.0" width="48" height="48" alt="" />
+          <div><strong>Routeva</strong><span>Ваш интернет — по вашим правилам</span></div>
         </div>
         <div class="header-status"><span id="headerDot"></span><strong id="headerStatus">Настройка</strong></div>
       </header>
@@ -24,23 +24,36 @@
       </aside>
 
       <section class="welcome">
-        <span class="eyebrow">ПРОЩЕ НЕКУДА</span>
-        <h1>Ваши серверы — в одном месте</h1>
-        <p>Добавьте сервер вручную или по ссылке подписки, затем выберите: отправлять через VPN только нужные сайты или весь интернет.</p>
+        <span class="eyebrow">ЦЕНТР УПРАВЛЕНИЯ</span>
+        <h1>Настройки Routeva</h1>
+        <p>Добавьте подключение и выберите, какие сайты должны идти через VPN. Остальное Routeva настроит сама.</p>
       </section>
 
       <section class="settings-card">
-        <div class="section-heading"><span class="step">1</span><div><h2>Подключения</h2><p>Добавьте сервер вручную или вставьте ссылку подписки</p></div></div>
-        <div class="server-toolbar">
-          <label class="field server-picker"><span>Профиль подключения</span><select id="serverSelect" aria-label="Профиль подключения для редактирования"></select></label>
-          <button class="secondary-button" id="newServer" type="button">+ Добавить</button>
-          <button class="danger-button" id="deleteServer" type="button">Удалить</button>
+        <div class="section-heading">
+          <span class="section-icon"><img src="../assets/icons/link.svg" width="20" height="20" alt="" /></span>
+          <div><h2>Подключения</h2><p>Самый простой способ — вставить ссылку подписки</p></div>
         </div>
+
         <div class="connection-method-tabs" role="tablist" aria-label="Способ добавления подключения">
-          <button class="connection-method-tab active" data-connection-method="manual" type="button" role="tab" aria-selected="true">Сервер вручную</button>
-          <button class="connection-method-tab" data-connection-method="subscription" type="button" role="tab" aria-selected="false">Ссылка подписки</button>
+          <button class="connection-method-tab active" data-connection-method="subscription" type="button" role="tab" aria-selected="true">
+            <img src="../assets/icons/link.svg" width="17" height="17" alt="" /> По ссылке
+          </button>
+          <button class="connection-method-tab" data-connection-method="manual" type="button" role="tab" aria-selected="false">
+            <img src="../assets/icons/database.svg" width="17" height="17" alt="" /> Вручную
+          </button>
         </div>
-        <div class="connection-method-panel" id="manualConnectionPanel" role="tabpanel">
+
+        <div class="connection-method-panel hidden" id="manualConnectionPanel" role="tabpanel">
+          <div class="server-toolbar">
+            <label class="field server-picker"><span>Сохранённое подключение</span><select id="serverSelect" aria-label="Подключение для редактирования"></select></label>
+            <button class="secondary-button" id="newServer" type="button">
+              <img src="../assets/icons/plus.svg" width="17" height="17" alt="" /> Новое
+            </button>
+            <button class="danger-button" id="deleteServer" type="button">
+              <img src="../assets/icons/trash.svg" width="17" height="17" alt="" /> Удалить
+            </button>
+          </div>
           <form id="connectionForm">
             <div class="field-grid">
               <label class="field wide"><span>Название</span><input id="serverName" name="name" type="text" autocomplete="off" placeholder="Например, Нидерланды" required /></label>
@@ -50,28 +63,35 @@
               <label class="field"><span>Логин · если нужен</span><input id="proxyUsername" name="username" type="text" autocomplete="username" /></label>
               <label class="field password-field wide"><span>Пароль · если нужен</span><input id="proxyPassword" name="password" type="password" autocomplete="current-password" /><button id="showPassword" type="button">Показать</button></label>
             </div>
-            <button class="primary-button" id="saveAndTest" type="submit"><span>Сохранить и проверить</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
+            <button class="primary-button" id="saveAndTest" type="submit"><span>Сохранить и проверить</span><img src="../assets/icons/check-circle.svg" width="19" height="19" alt="" /></button>
             <div class="test-result hidden" id="testResult" role="status"></div>
           </form>
         </div>
-        <div class="connection-method-panel hidden" id="subscriptionConnectionPanel" role="tabpanel">
+
+        <div class="connection-method-panel" id="subscriptionConnectionPanel" role="tabpanel">
+          <div class="easy-path">
+            <img src="../assets/icons/shield-check.svg" width="22" height="22" alt="" />
+            <div><strong>Вставьте ссылку — и всё готово</strong><span>Routeva найдёт серверы, страны и протоколы автоматически.</span></div>
+          </div>
           <form class="subscription-form" id="subscriptionForm">
-            <label class="field"><span>Название</span><input id="subscriptionName" type="text" placeholder="Например, Quattro Cloud" autocomplete="off" /></label>
             <label class="field subscription-url"><span>Ссылка подписки</span><div class="input-action"><input id="subscriptionUrl" type="password" placeholder="https://provider.example/ваша-ссылка" autocomplete="off" spellcheck="false" required /><button id="showSubscriptionUrl" type="button">Показать</button></div></label>
-            <button class="primary-button compact" type="submit"><span>Добавить подписку</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 5.6 6.4 6.4-6.4 6.4 1.4 1.4 7.8-7.8-7.8-7.8-1.4 1.4Z"/></svg></button>
+            <label class="field"><span>Название · необязательно</span><input id="subscriptionName" type="text" placeholder="Например, Quattro Cloud" autocomplete="off" /></label>
+            <button class="primary-button compact" type="submit"><span>Добавить подписку</span><img src="../assets/icons/plus.svg" width="19" height="19" alt="" /></button>
           </form>
-          <p class="privacy-note">Ссылка отправляется только на ваш Routeva Gateway, хранится на вашем сервере и не попадает в GitHub.</p>
+          <p class="privacy-note"><img src="../assets/icons/lock-key.svg" width="14" height="14" alt="" /> Ссылка хранится только на вашем Routeva Gateway и не попадает в GitHub.</p>
           <div class="subscription-list" id="subscriptionList"><span class="empty-state">Подписок пока нет</span></div>
           <div class="protocol-guide">
-            <div><strong>В браузере</strong><span>Один защищённый HTTPS-прокси</span></div>
-            <div><strong>На вашем Gateway</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
-            <p>Routeva Gateway загружает подписку, а нужный узел вы выбираете в окне расширения.</p>
+            <img src="../assets/icons/globe-hemisphere-west.svg" width="22" height="22" alt="" />
+            <div><strong>Поддерживаемые протоколы</strong><span>VLESS · VMess · Trojan · Shadowsocks · Hysteria 2 · TUIC · WireGuard · AmneziaWG</span></div>
           </div>
         </div>
       </section>
 
       <section class="settings-card">
-        <div class="section-heading"><span class="step">2</span><div><h2>Маршрутизация</h2><p>Выберите режим VPN и настройте сайты-исключения</p></div></div>
+        <div class="section-heading">
+          <span class="section-icon"><img src="../assets/icons/globe.svg" width="20" height="20" alt="" /></span>
+          <div><h2>Маршрутизация</h2><p>Куда направлять трафик через VPN</p></div>
+        </div>
         <div class="setting-row mode-setting-row">
           <div><strong>Режим VPN</strong><span id="routeModeMeta">Только сайты из списка</span></div>
           <div class="route-mode options-route-mode" role="group" aria-label="Режим VPN">
@@ -80,12 +100,16 @@
           </div>
         </div>
         <div class="setting-row">
-          <div><strong>Список для России</strong><span id="listMeta">Загрузка…</span></div>
-          <div class="row-actions"><button class="text-button" id="toggleDomains" type="button">Посмотреть домены</button><button class="text-button" id="refreshList" type="button">Обновить</button><button class="mini-toggle" id="optionsCommunityToggle" type="button" role="switch" aria-checked="true"><span></span></button></div>
+          <div><strong>Автоматический список</strong><span id="listMeta">Загрузка…</span></div>
+          <div class="row-actions">
+            <button class="text-button" id="toggleDomains" type="button">Домены</button>
+            <button class="icon-action" id="refreshList" type="button" aria-label="Обновить список"><img src="../assets/icons/arrow-clockwise.svg" width="17" height="17" alt="" /></button>
+            <button class="mini-toggle" id="optionsCommunityToggle" type="button" role="switch" aria-checked="true" aria-label="Использовать автоматический список"><span></span></button>
+          </div>
         </div>
         <section class="domain-explorer hidden" id="domainExplorer" aria-label="Домены через VPN">
           <div class="domain-search-row">
-            <label class="domain-search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.5 19.1-4.2-4.2a7 7 0 1 0-1.4 1.4l4.2 4.2 1.4-1.4ZM5.5 10.8a5.3 5.3 0 1 1 10.6 0 5.3 5.3 0 0 1-10.6 0Z"/></svg><input id="domainSearch" type="search" placeholder="Найти домен, например discord.com" autocomplete="off" spellcheck="false" /></label>
+            <label class="domain-search"><img src="../assets/icons/magnifying-glass.svg" width="17" height="17" alt="" /><input id="domainSearch" type="search" placeholder="Найти домен, например discord.com" autocomplete="off" spellcheck="false" /></label>
             <span id="domainResultsMeta">0 доменов</span>
           </div>
           <div class="domain-list" id="domainList"></div>
@@ -93,7 +117,7 @@
           <p class="domain-sources" id="domainSources"></p>
         </section>
         <form class="add-domain" id="addDomainForm">
-          <label class="field"><span>Добавить свой сайт</span><div class="input-action"><input id="newDomain" type="text" placeholder="example.com" spellcheck="false" /><button type="submit">Добавить</button></div></label>
+          <label class="field"><span>Добавить сайт</span><div class="input-action"><input id="newDomain" type="text" placeholder="example.com" spellcheck="false" /><button type="submit">Добавить</button></div></label>
         </form>
         <div class="domain-columns">
           <div><h3>Через VPN <span id="customCount">0</span></h3><div class="chip-list" id="customDomains"><span class="empty-state">Пока нет своих сайтов</span></div></div>
@@ -101,9 +125,9 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Routeva 0.7.1 · ваш Gateway</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Списки доменов: itdoginfo + Re-filter</a></footer>
+      <footer class="options-footer"><span>Routeva 0.8.0 · ваш Gateway</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Источники списков</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
-    <script type="module" src="options.js?v=0.7.1"></script>
+    <script type="module" src="options.js?v=0.8.0-r1"></script>
   </body>
 </html>

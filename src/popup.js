@@ -22,8 +22,8 @@ const PREVIEW_STATUS = {
   subscriptionCards: [],
   updateNotice: {
     kind: "installed",
-    version: "0.7.1",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.1"
+    version: "0.8.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.8.0"
   }
 };
 
@@ -202,11 +202,15 @@ function createServerSlide(server, status) {
   const serverName = makeElement("strong", "", server.name || "Без названия");
   const declaredCountryName = countryNameByCode(server.declaredCountryCode);
   const visibleCountryName = declaredCountryName || server.countryName;
+  const nameAlreadyHasCountry = visibleCountryName
+    && String(server.name || "").toLocaleLowerCase("ru-RU").includes(visibleCountryName.toLocaleLowerCase("ru-RU"));
   const locationText = makeElement(
     "span",
     "",
     visibleCountryName
-      ? `${visibleCountryName}${server.exitIp ? ` · ${server.exitIp}` : ""}`
+      ? (server.exitIp
+          ? `${nameAlreadyHasCountry ? "" : `${visibleCountryName} · `}${server.exitIp}`
+          : (nameAlreadyHasCountry ? "Страна указана в названии" : visibleCountryName))
       : pendingLocation ? "Определяем фактический выход…" : "Выход определится при выборе"
   );
   serverInfo.append(serverName, locationText);
@@ -226,7 +230,7 @@ function createSubscriptionSlide(subscription) {
   copyWrap.append(
     makeElement("span", "eyebrow", "ПОДПИСКА ДОБАВЛЕНА"),
     makeElement("h1", "", subscription.name),
-    makeElement("p", "", `${subscription.nodeCount.toLocaleString("ru-RU")} узлов готовы на Routeva Gateway`)
+    makeElement("p", "", `${subscription.nodeCount.toLocaleString("ru-RU")} серверов в этой подписке`)
   );
   const protocols = makeElement("div", "subscription-slide-protocols");
   (subscription.protocols || []).slice(0, 3).forEach((protocol) => {

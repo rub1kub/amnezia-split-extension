@@ -68,8 +68,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.7.1",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.7.1"
+    version: "0.8.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.8.0"
   }
 };
 let status = null;
@@ -191,7 +191,7 @@ function renderSubscriptions(subscriptions = []) {
     const date = subscription.updatedAt
       ? new Date(subscription.updatedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })
       : "ещё не обновлялась";
-    meta.textContent = `${subscription.nodeCount} узлов на Routeva Gateway · ${date}`;
+    meta.textContent = `${subscription.nodeCount} серверов · обновлено ${date}`;
     const protocols = document.createElement("div");
     protocols.className = "subscription-protocols";
     (subscription.protocols || []).forEach((protocol) => {
@@ -232,6 +232,10 @@ function renderSubscriptions(subscriptions = []) {
     });
     actions.append(refreshButton, deleteButton);
 
+    const details = document.createElement("details");
+    details.className = "subscription-details";
+    const summary = document.createElement("summary");
+    summary.textContent = `Показать серверы · ${subscription.nodeCount.toLocaleString("ru-RU")}`;
     const nodes = document.createElement("div");
     nodes.className = "subscription-nodes";
     (subscription.nodes || []).slice(0, 8).forEach((node) => {
@@ -241,18 +245,17 @@ function renderSubscriptions(subscriptions = []) {
       type.textContent = node.protocolLabel || protocolLabel(node.protocol);
       const name = document.createElement("span");
       name.textContent = node.name;
-      const mode = document.createElement("em");
-      mode.textContent = "Доступен";
-      row.append(type, name, mode);
+      row.append(type, name);
       nodes.append(row);
     });
     if ((subscription.nodes || []).length > 8) {
       const more = document.createElement("span");
       more.className = "empty-state";
-      more.textContent = `Ещё ${(subscription.nodes.length - 8).toLocaleString("ru-RU")} узлов`;
+      more.textContent = `Ещё ${(subscription.nodes.length - 8).toLocaleString("ru-RU")} серверов доступны через поиск в окне Routeva`;
       nodes.append(more);
     }
-    card.append(main, actions, nodes);
+    details.append(summary, nodes);
+    card.append(main, actions, details);
     container.append(card);
   });
 }
@@ -509,7 +512,7 @@ $("#subscriptionForm").addEventListener("submit", async (event) => {
     $("#subscriptionName").value = "";
     $("#subscriptionUrl").value = "";
     const imported = next.subscriptions?.find((item) => item.url === url.href);
-    toast(`Подписка добавлена на Gateway: ${imported?.nodeCount || 0} узлов доступны`);
+    toast(`Подписка добавлена: ${imported?.nodeCount || 0} серверов готово`);
   } catch (error) {
     toast(error.message, "error");
   } finally {
@@ -544,7 +547,7 @@ $("#optionsCommunityToggle").addEventListener("click", async () => {
 $("#refreshList").addEventListener("click", async () => {
   const button = $("#refreshList");
   button.disabled = true;
-  button.textContent = "Обновляю…";
+  button.setAttribute("aria-label", "Обновляю список");
   try {
     const result = await send("updateCommunityList");
     toast(`Обновлено: ${result.count.toLocaleString("ru-RU")} доменов`);
@@ -553,7 +556,7 @@ $("#refreshList").addEventListener("click", async () => {
     toast(error.message, "error");
   } finally {
     button.disabled = false;
-    button.textContent = "Обновить";
+    button.setAttribute("aria-label", "Обновить список");
   }
 });
 

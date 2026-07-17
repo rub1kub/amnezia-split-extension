@@ -4,19 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Routeva</title>
-    <link rel="stylesheet" href="ui.css?v=0.7.1" />
+    <link rel="stylesheet" href="ui.css?v=0.8.0-r1" />
   </head>
   <body class="popup-page">
     <main class="popup-shell">
       <header class="app-header">
         <div class="brand">
-          <img src="../assets/icon-32.png?v=0.7.1" width="32" height="32" alt="" />
+          <img src="../assets/icon-32.png?v=0.8.0" width="32" height="32" alt="" />
           <div>
             <strong>Routeva</strong>
-            <span>VPN и прокси по вашим правилам</span>
+            <span>Ваш интернет — по вашим правилам</span>
           </div>
         </div>
-        <button class="icon-button" id="openSettings" type="button" aria-label="Открыть настройки">Настройки</button>
+        <button class="icon-button" id="openSettings" type="button">
+          <img src="../assets/icons/gear.svg" width="16" height="16" alt="" />
+          <span>Настройки</span>
+        </button>
       </header>
 
       <aside class="update-card hidden" id="updateCard">
@@ -27,29 +30,31 @@
 
       <section class="server-deck" id="serverDeck" aria-label="Выбранный сервер">
         <div class="server-track" id="serverTrack"></div>
-        <button class="power-switch" id="masterToggle" type="button" role="switch" aria-checked="true">
+        <button class="power-switch" id="masterToggle" type="button" role="switch" aria-checked="true" aria-label="Включить или выключить VPN">
           <span></span>
         </button>
       </section>
-      <nav class="server-pagination" aria-label="Переключение серверов">
-        <button class="server-arrow" id="serverPrev" type="button" aria-label="Предыдущий сервер">
-          <img src="../assets/icons/caret-left.svg" width="16" height="16" alt="" />
-        </button>
-        <span id="serverPosition" aria-live="polite">1 из 1</span>
-        <button class="server-arrow" id="serverNext" type="button" aria-label="Следующий сервер">
-          <img src="../assets/icons/caret-right.svg" width="16" height="16" alt="" />
-        </button>
-      </nav>
 
-      <section class="server-search" id="serverSearch">
-        <label class="server-search-field" for="serverSearchInput">
-          <img src="../assets/icons/magnifying-glass.svg" width="16" height="16" alt="" />
-          <input id="serverSearchInput" type="search" placeholder="Найти сервер или страну" autocomplete="off" spellcheck="false" />
-          <button class="server-search-clear hidden" id="serverSearchClear" type="button" aria-label="Очистить поиск">
-            <img src="../assets/icons/x.svg" width="14" height="14" alt="" />
+      <section class="server-controls" aria-label="Выбор сервера">
+        <nav class="server-pagination" aria-label="Переключение серверов">
+          <button class="server-arrow" id="serverPrev" type="button" aria-label="Предыдущий сервер">
+            <img src="../assets/icons/caret-left.svg" width="16" height="16" alt="" />
           </button>
-        </label>
-        <div class="server-search-results hidden" id="serverSearchResults" role="listbox" aria-label="Результаты поиска серверов"></div>
+          <span id="serverPosition" aria-live="polite">1 из 1</span>
+          <button class="server-arrow" id="serverNext" type="button" aria-label="Следующий сервер">
+            <img src="../assets/icons/caret-right.svg" width="16" height="16" alt="" />
+          </button>
+        </nav>
+        <div class="server-search" id="serverSearch">
+          <label class="server-search-field" for="serverSearchInput">
+            <img src="../assets/icons/magnifying-glass.svg" width="16" height="16" alt="" />
+            <input id="serverSearchInput" type="search" placeholder="Найти сервер" autocomplete="off" spellcheck="false" aria-label="Найти сервер или страну" />
+            <button class="server-search-clear hidden" id="serverSearchClear" type="button" aria-label="Очистить поиск">
+              <img src="../assets/icons/x.svg" width="14" height="14" alt="" />
+            </button>
+          </label>
+          <div class="server-search-results hidden" id="serverSearchResults" role="listbox" aria-label="Результаты поиска серверов"></div>
+        </div>
       </section>
 
       <div class="route-mode" role="group" aria-label="Режим VPN">
@@ -63,23 +68,23 @@
           <span>Текущий сайт</span>
           <strong id="currentHost">—</strong>
         </div>
-        <button class="mini-toggle" id="siteToggle" type="button" role="switch" aria-checked="false"><span></span></button>
+        <button class="mini-toggle" id="siteToggle" type="button" role="switch" aria-checked="false" aria-label="Направлять текущий сайт через VPN"><span></span></button>
       </section>
 
       <section class="panel list-panel">
         <div class="list-icon">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.75h10A2.25 2.25 0 0 1 19.25 7v10A2.25 2.25 0 0 1 17 19.25H7A2.25 2.25 0 0 1 4.75 17V7A2.25 2.25 0 0 1 7 4.75Zm2.1 4.1a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm2.1-.75a.75.75 0 0 0 0 1.5h5.2a.75.75 0 0 0 0-1.5h-5.2Zm-2.1 3.9a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm2.1-.75a.75.75 0 0 0 0 1.5h5.2a.75.75 0 0 0 0-1.5h-5.2Zm-2.1 3.9a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm2.1-.75a.75.75 0 0 0 0 1.5h5.2a.75.75 0 0 0 0-1.5h-5.2Z"/></svg>
+          <img src="../assets/icons/database.svg" width="20" height="20" alt="" />
         </div>
         <div class="site-copy">
-          <span>Готовый список</span>
+          <span>Автоматический список</span>
           <strong id="communityLabel">Сайты для России</strong>
         </div>
-        <button class="mini-toggle" id="communityToggle" type="button" role="switch" aria-checked="true"><span></span></button>
+        <button class="mini-toggle" id="communityToggle" type="button" role="switch" aria-checked="true" aria-label="Использовать автоматический список"><span></span></button>
       </section>
 
       <p class="notice hidden" id="notice" role="status"></p>
       <footer id="routeFooter"><span class="privacy-dot"></span> Остальные сайты подключаются напрямую</footer>
     </main>
-    <script type="module" src="popup.js?v=0.7.1"></script>
+    <script type="module" src="popup.js?v=0.8.0-r1"></script>
   </body>
 </html>
