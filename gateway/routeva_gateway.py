@@ -361,7 +361,13 @@ def select_node(name: str) -> dict[str, Any]:
     state = load_state()
     state["selected"] = value
     save_state(state)
-    return build_public_status()
+    # Keep switching constant-size. Returning every provider node here made
+    # the browser download and rewrite hundreds of records after every click.
+    return {
+        "version": 1,
+        "ready": True,
+        "selected": value,
+    }
 
 
 class GatewayHandler(BaseHTTPRequestHandler):

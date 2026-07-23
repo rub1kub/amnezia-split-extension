@@ -55,6 +55,7 @@ let currentDeckItems = [];
 let currentDeckIndex = 0;
 let navigationBusy = false;
 let swipeStartX = null;
+let locationProbeServerId = null;
 const regionNames = typeof Intl.DisplayNames === "function"
   ? new Intl.DisplayNames(["ru"], { type: "region" })
   : null;
@@ -230,7 +231,7 @@ function createSubscriptionSlide(subscription) {
   copyWrap.append(
     makeElement("span", "eyebrow", "ПОДПИСКА ДОБАВЛЕНА"),
     makeElement("h1", "", subscription.name),
-    makeElement("p", "", `${subscription.nodeCount.toLocaleString("ru-RU")} серверов в этой подписке`)
+    makeElement("p", "", `${Number(subscription.nodeCount || 0).toLocaleString("ru-RU")} серверов в этой подписке`)
   );
   const protocols = makeElement("div", "subscription-slide-protocols");
   (subscription.protocols || []).slice(0, 3).forEach((protocol) => {
@@ -271,13 +272,38 @@ function renderDeckIndex(status, index) {
 }
 
 function renderServerDeck(status) {
+  const servers = Array.isArray(status.servers) ? status.servers : [];
+  const fallbackServer = status.activeServer?.id
+    ? [{ ...status.activeServer, kind: "server", selectable: true }]
+    : [];
   currentDeckItems = [
-    ...status.servers.map((server) => ({ ...server, kind: "server", selectable: true })),
-    ...(status.subscriptionCards || [])
+    ...(servers.length ? servers.map((server) => ({ ...server, kind: "server", selectable: true })) : fallbackServer),
+    ...(Array.isArray(status.subscriptionCards) ? status.subscriptionCards : [])
   ];
-  const activeIndex = Math.max(0, status.servers.findIndex((server) => server.id === status.activeServerId));
+  const activeIndex = Math.max(0, currentDeckItems.findIndex((server) => server.id === status.activeServerId));
   renderDeckIndex(status, activeIndex);
   renderServerSearch();
+}
+
+function normalizeRenderableStatus(status = {}) {
+  const servers = Array.isArray(status.servers) ? status.servers : [];
+  const activeServer = status.activeServer
+    || servers.find((server) => server.id === status.activeServerId)
+    || servers[0]
+    || { id: "unavailable", name: "Серверы загружаются", protocolLabel: "VPN" };
+  return {
+    ...status,
+    enabled: status.enabled !== false,
+    configured: Boolean(status.configured),
+    routeMode: status.routeMode === "all" ? "all" : "selected",
+    useCommunityList: status.useCommunityList !== false,
+    communityCount: Number(status.communityCount || 0),
+    activeCount: Number(status.activeCount || 0),
+    servers,
+    activeServer,
+    activeServerId: status.activeServerId || activeServer.id,
+    subscriptionCards: Array.isArray(status.subscriptionCards) ? status.subscriptionCards : []
+  };
 }
 
 async function selectDeckIndex(nextIndex) {
@@ -294,11 +320,24 @@ async function selectDeckIndex(nextIndex) {
     return;
   }
   navigationBusy = true;
+  const previousStatus = currentStatus;
+  const previousIndex = currentDeckIndex;
+  const optimisticStatus = {
+    ...currentStatus,
+    activeServerId: item.id,
+    activeServer: item
+  };
+  currentStatus = optimisticStatus;
+  renderDeckIndex(optimisticStatus, nextIndex);
   $("#serverDeck").setAttribute("aria-busy", "true");
   updateCarouselMeta(currentDeckIndex);
   try {
-    render(await send("selectServer", { id: item.id }));
+    const next = await send("selectServer", { id: item.id });
+    render(next);
+    probeLocationInBackground(item.id);
   } catch (error) {
+    currentStatus = previousStatus;
+    renderDeckIndex(previousStatus, previousIndex);
     showNotice(error.message, "error");
   } finally {
     navigationBusy = false;
@@ -358,6 +397,7 @@ function renderServerSearch() {
 }
 
 function render(status) {
+  status = normalizeRenderableStatus(status);
   currentStatus = status;
   const active = status.enabled && status.configured;
   setSwitch($("#masterToggle"), active);
@@ -404,26 +444,51 @@ async function getActiveHost() {
 
 async function refresh() {
   currentHost = await getActiveHost();
-  let next = await send("getStatus", { host: currentHost });
-  if (!PREVIEW && next.enabled && next.configured && !next.activeServer?.exitIp) {
-    try {
-      next = await send("probeLocation", { host: currentHost });
-    } catch (error) {
-      showNotice("Не удалось определить страну. Повторим при следующем открытии.", "error");
-    }
-  }
+  const next = await send("getStatus", { host: currentHost });
   render(next);
+  if (!PREVIEW && next.enabled && next.configured && !next.activeServer?.exitIp) {
+    probeLocationInBackground(next.activeServerId);
+  }
+  return next;
+}
+
+function probeLocationInBackground(serverId) {
+  if (PREVIEW || !serverId || locationProbeServerId === serverId) return;
+  locationProbeServerId = serverId;
+  send("probeLocation", { host: currentHost })
+    .then((next) => {
+      if (currentStatus?.activeServerId === serverId) render(next);
+    })
+    .catch(() => {
+      // Location is decorative. It must never hide or block the server list.
+    })
+    .finally(() => {
+      if (locationProbeServerId === serverId) locationProbeServerId = null;
+    });
 }
 
 $("#masterToggle").addEventListener("click", async () => {
-  if (!requireStatus()) return;
-  if (!currentStatus.configured) {
+  let status = currentStatus;
+  if (!status || status.activeServerId === "unavailable") {
+    try {
+      status = await send("getStatus", { host: currentHost });
+      render(status);
+    } catch (error) {
+      showNotice(error.message, "error");
+      return;
+    }
+  }
+  if (!status.configured) {
     await chrome.runtime.openOptionsPage();
     return;
   }
+  const previousStatus = status;
+  const enabled = !status.enabled;
+  render({ ...status, enabled });
   try {
-    render(await send("setEnabled", { enabled: !currentStatus.enabled, host: currentHost }));
+    render(await send("setEnabled", { enabled, host: currentHost }));
   } catch (error) {
+    render(previousStatus);
     showNotice(error.message, "error");
   }
 });
@@ -524,4 +589,16 @@ refresh()
     }
     if (PREVIEW_AUTO_NEXT) requestAnimationFrame(() => $("#serverNext").click());
   })
-  .catch((error) => showNotice(error.message, "error"));
+  .catch((error) => {
+    render({
+      enabled: false,
+      configured: false,
+      activeServer: {
+        id: "unavailable",
+        name: "Не удалось загрузить серверы",
+        protocolLabel: "VPN"
+      },
+      servers: []
+    });
+    showNotice(error.message, "error");
+  });

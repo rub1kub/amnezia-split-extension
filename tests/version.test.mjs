@@ -49,6 +49,7 @@ test("keeps gateway node cards synchronized automatically", async () => {
 test("does not re-probe a known exit on every popup open", async () => {
   const popup = await readFile(new URL("../src/popup.js", import.meta.url), "utf8");
   assert.match(popup, /next\.configured && !next\.activeServer\?\.exitIp/);
+  assert.match(popup, /render\(next\);[\s\S]*probeLocationInBackground\(next\.activeServerId\)/);
   assert.doesNotMatch(popup, /showNotice\(`Выбран:/);
 });
 
@@ -60,4 +61,28 @@ test("keeps the popup server card stable and searchable", async () => {
   assert.match(popup, /function renderServerSearch\(\)/);
   assert.doesNotMatch(popup, /country-flag/);
   assert.doesNotMatch(css, /server-card-in/);
+});
+
+test("keeps gateway nodes compact and switches without a full resync", async () => {
+  const background = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+  const normalizeStart = background.indexOf("function normalizeServer");
+  const normalizeEnd = background.indexOf("function normalizeSubscription");
+  const selectStart = background.indexOf("async function selectServer");
+  const selectEnd = background.indexOf("async function deleteServer");
+  const normalizeServer = background.slice(normalizeStart, normalizeEnd);
+  const selectServer = background.slice(selectStart, selectEnd);
+
+  assert.match(normalizeServer, /gatewayNode \? "" : String\(server\.password/);
+  assert.match(selectServer, /gatewayRequest\(state, "\/v1\/nodes\/select"/);
+  assert.doesNotMatch(selectServer, /syncGatewayState/);
+  assert.doesNotMatch(selectServer, /setTimeout|probeActiveServerLocation/);
+});
+
+test("preserves the last gateway snapshot on a transient empty sync", async () => {
+  const background = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+  const start = background.indexOf("function syncGatewayState");
+  const end = background.indexOf("async function migrateSubscriptionsToGateway");
+  const syncGatewayState = background.slice(start, end);
+  assert.match(syncGatewayState, /preserveLastSnapshot/);
+  assert.match(syncGatewayState, /oldGatewayServers\.map/);
 });

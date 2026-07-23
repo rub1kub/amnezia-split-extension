@@ -63,6 +63,27 @@ class GatewayConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Несколько узлов"):
             gateway.select_node("Auto")
 
+    @mock.patch.object(gateway, "save_state")
+    @mock.patch.object(gateway, "load_state")
+    @mock.patch.object(gateway, "mihomo_request")
+    @mock.patch.object(gateway, "build_public_status")
+    def test_selection_response_does_not_return_every_node(self, status, request, load_state, save_state):
+        status.return_value = {
+            "nodes": [{"key": "[routeva_one] Berlin", "name": "Berlin"}]
+        }
+        load_state.return_value = {"selected": "DIRECT", "subscriptions": []}
+
+        result = gateway.select_node("[routeva_one] Berlin")
+
+        request.assert_called_once_with(
+            "/proxies/ROUTEVA",
+            method="PUT",
+            payload={"name": "[routeva_one] Berlin"},
+        )
+        save_state.assert_called_once()
+        self.assertEqual(result["selected"], "[routeva_one] Berlin")
+        self.assertNotIn("nodes", result)
+
 
 if __name__ == "__main__":
     unittest.main()

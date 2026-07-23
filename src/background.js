@@ -71,18 +71,22 @@ let stateCache = null;
 const proxyAuthAttempts = new Map();
 
 function normalizeServer(server = {}, fallbackId = "server-1", fallbackName = "Сервер") {
+  const source = ["subscription", "gateway"].includes(server.source) ? server.source : "manual";
+  const gatewayNode = source === "gateway";
   const scheme = normalizeProxyScheme(server.scheme || server.protocol || "https");
   const countryCode = normalizeCountryCode(server.countryCode);
   return {
     id: String(server.id || fallbackId),
     name: String(server.name || fallbackName).trim() || fallbackName,
-    host: String(server.host || "").trim().toLowerCase(),
-    port: Number(server.port) || 0,
-    username: String(server.username || "").trim(),
-    password: String(server.password || ""),
-    scheme,
+    // Gateway nodes all use the same manually configured HTTPS proxy.
+    // Duplicating its credentials on every node made large subscriptions slow.
+    host: gatewayNode ? "" : String(server.host || "").trim().toLowerCase(),
+    port: gatewayNode ? 0 : Number(server.port) || 0,
+    username: gatewayNode ? "" : String(server.username || "").trim(),
+    password: gatewayNode ? "" : String(server.password || ""),
+    scheme: gatewayNode ? "https" : scheme,
     protocol: String(server.protocol || scheme).trim().toLowerCase(),
-    source: ["subscription", "gateway"].includes(server.source) ? server.source : "manual",
+    source,
     subscriptionId: server.subscriptionId ? String(server.subscriptionId) : null,
     sourceNodeKey: server.sourceNodeKey ? String(server.sourceNodeKey) : null,
     gatewayNodeId: server.gatewayNodeId ? String(server.gatewayNodeId) : null,
@@ -105,7 +109,8 @@ function normalizeSubscription(subscription = {}) {
     compatibleCount: Number(subscription.compatibleCount) || 0,
     companionCount: Number(subscription.companionCount) || 0,
     protocols: [...(subscription.protocols ?? [])],
-    nodes: [...(subscription.nodes ?? [])],
+    // Settings needs a preview; popup search uses state.servers.
+    nodes: [...(subscription.nodes ?? [])].slice(0, 12),
     gatewayManaged: Boolean(subscription.gatewayManaged),
     lastError: subscription.lastError ? String(subscription.lastError) : null
   };
@@ -161,11 +166,29 @@ function getActiveServer(state) {
   return state.servers.find((server) => server.id === state.activeServerId) ?? state.servers[0];
 }
 
+function resolveServerConnection(state, server = getActiveServer(state)) {
+  if (!server || server.source !== "gateway") return server;
+  const proxyServer = getGatewayProxyServer(state);
+  if (!proxyServer) return server;
+  return {
+    ...server,
+    host: proxyServer.host,
+    port: proxyServer.port,
+    username: proxyServer.username,
+    password: proxyServer.password,
+    scheme: proxyServer.scheme
+  };
+}
+
 function isServerConfigured(server) {
   if (!server?.host || Number(server.port) <= 0 || !DIRECT_PROXY_SCHEMES[normalizeProxyScheme(server.scheme)]) {
     return false;
   }
   return Boolean(server.username) === Boolean(server.password);
+}
+
+function isStateServerConfigured(state, server = getActiveServer(state)) {
+  return isServerConfigured(resolveServerConnection(state, server));
 }
 
 async function getState() {
@@ -231,7 +254,7 @@ async function initialize() {
 }
 
 async function setBadge(state) {
-  const active = state.enabled && isServerConfigured(getActiveServer(state));
+  const active = state.enabled && isStateServerConfigured(state);
   const notice = state.updateNotice;
   const badge = notice ? (notice.kind === "available" ? "NEW" : "✓") : active ? "ON" : "";
   const badgeColor = notice ? "#6F5BE7" : active ? "#14A27A" : "#8A93A3";
@@ -250,7 +273,7 @@ async function setBadge(state) {
 
 async function applyProxy(providedState) {
   const state = providedState ?? (await getState());
-  const server = getActiveServer(state);
+  const server = resolveServerConnection(state);
   if (!state.enabled || !isServerConfigured(server)) {
     await chrome.proxy.settings.clear({ scope: "regular" });
     await setBadge(state);
@@ -464,29 +487,33 @@ async function selectServer(id) {
   if (!server) throw new Error("Сервер не найден");
   if (server.source === "gateway" || (state.gateway?.enabled && id === state.gateway.proxyServerId)) {
     const nodeName = server.source === "gateway" ? server.sourceNodeKey : "DIRECT";
-    const { payload, gateway } = await gatewayRequest(state, "/v1/nodes/select", {
+    const { gateway } = await gatewayRequest(state, "/v1/nodes/select", {
       method: "PUT",
       body: { name: nodeName }
     });
-    const synced = syncGatewayState(state, payload, gateway);
-    const selected = synced.servers.find((item) => item.source === "gateway" && item.sourceNodeKey === nodeName)
-      || synced.servers.find((item) => item.id === gateway.proxyServerId)
-      || synced.servers[0];
-    const servers = synced.servers.map((item) => item.id === selected.id
+    const selected = server.source === "gateway"
+      ? server
+      : state.servers.find((item) => item.id === gateway.proxyServerId) || server;
+    const servers = state.servers.map((item) => item.id === selected.id
       ? normalizeServer({ ...item, countryCode: "", countryName: "", exitIp: "", locationCheckedAt: null })
       : item);
+    const stateWithServers = { ...state, servers };
     const next = await saveState({
-      ...synced,
+      ...stateWithServers,
+      gateway: {
+        ...gateway,
+        enabled: true,
+        connected: true,
+        lastSyncAt: new Date().toISOString()
+      },
       servers,
       activeServerId: selected.id,
-      configured: isServerConfigured(selected),
+      configured: isStateServerConfigured(stateWithServers, selected),
       proxyRevision: state.proxyRevision + 1,
       lastError: null
     });
     await applyProxy(next);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const located = await probeActiveServerLocation(next).catch(() => next);
-    return getPublicStatus(null, located, true);
+    return getPublicStatus(null, next);
   }
   const servers = state.servers.map((item) => item.id === server.id
     ? normalizeServer({ ...item, countryCode: "", countryName: "", exitIp: "", locationCheckedAt: null })
@@ -500,9 +527,7 @@ async function selectServer(id) {
     lastError: null
   });
   await applyProxy(next);
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  const located = await probeActiveServerLocation(next).catch(() => next);
-  return getPublicStatus(null, located, true);
+  return getPublicStatus(null, next);
 }
 
 async function deleteServer(id) {
@@ -516,7 +541,7 @@ async function deleteServer(id) {
     ...state,
     servers,
     activeServerId: activeServer.id,
-    configured: isServerConfigured(activeServer),
+    configured: isStateServerConfigured({ ...state, servers }, activeServer),
     lastError: null
   });
   await applyProxy(next);
@@ -566,16 +591,18 @@ async function saveServerLocation(state, serverId, location) {
 
 async function probeActiveServerLocation(providedState) {
   const state = providedState ?? (await getState());
-  const server = getActiveServer(state);
+  const storedServer = getActiveServer(state);
+  const server = resolveServerConnection(state, storedServer);
   if (!state.enabled || !isServerConfigured(server)) return state;
   await applyProxy(state);
   const location = await fetchCountry("probe", state.proxyRevision % COUNTRY_SERVICES.length);
-  return saveServerLocation(state, server.id, location);
+  return saveServerLocation(state, storedServer.id, location);
 }
 
 async function testProxy() {
   let state = await getState();
-  const server = getActiveServer(state);
+  const storedServer = getActiveServer(state);
+  const server = resolveServerConnection(state, storedServer);
   if (!isServerConfigured(server)) throw new Error("Сначала сохраните данные подключения");
   try {
     await chrome.proxy.settings.clear({ scope: "regular" });
@@ -595,7 +622,7 @@ async function testProxy() {
       scope: "regular"
     });
     const proxied = await fetchCountry("proxy");
-    state = await saveServerLocation(state, server.id, proxied);
+    state = await saveServerLocation(state, storedServer.id, proxied);
     return {
       directIp: direct.ip,
       proxyIp: proxied.ip,
@@ -693,18 +720,20 @@ function syncGatewayState(state, gatewayStatus, controller) {
     server
   ]));
   const manualServers = state.servers.filter((server) => server.source === "manual");
-  const gatewayServers = (gatewayStatus.nodes || []).map((node) => {
+  const incomingNodes = Array.isArray(gatewayStatus.nodes) ? gatewayStatus.nodes : [];
+  const incomingSubscriptions = Array.isArray(gatewayStatus.subscriptions) ? gatewayStatus.subscriptions : [];
+  const preserveLastSnapshot = incomingNodes.length === 0
+    && oldGatewayServers.length > 0
+    && incomingSubscriptions.length > 0
+    && state.subscriptions.some((item) => item.gatewayManaged && item.nodeCount > 0);
+  const gatewayServers = (preserveLastSnapshot ? [] : incomingNodes).map((node) => {
     const nodeKey = String(node.key || node.name);
     const key = `${node.subscriptionId}\0${nodeKey}`;
     const old = oldByNode.get(key);
     return normalizeServer({
       id: `gateway:${node.id}`,
       name: node.name,
-      host: proxyServer.host,
-      port: proxyServer.port,
-      username: proxyServer.username,
-      password: proxyServer.password,
-      scheme: proxyServer.scheme,
+      scheme: "https",
       protocol: normalizeProtocol(node.protocol),
       source: "gateway",
       subscriptionId: node.subscriptionId,
@@ -716,10 +745,14 @@ function syncGatewayState(state, gatewayStatus, controller) {
       exitIp: old?.exitIp || ""
     });
   });
+  if (preserveLastSnapshot) gatewayServers.push(...oldGatewayServers.map((server) => normalizeServer(server)));
   const oldSubscriptions = new Map(state.subscriptions.map((item) => [item.id, item]));
-  const subscriptions = (gatewayStatus.subscriptions || []).map((item) => {
+  const subscriptions = incomingSubscriptions.map((item) => {
     const old = oldSubscriptions.get(item.id);
-    const nodes = (item.nodes || []).map((node) => ({
+    const incomingPreviewNodes = Array.isArray(item.nodes) ? item.nodes : [];
+    const nodes = (preserveLastSnapshot && incomingPreviewNodes.length === 0
+      ? old?.nodes || []
+      : incomingPreviewNodes).slice(0, 12).map((node) => ({
       name: node.name,
       protocol: normalizeProtocol(node.protocol),
       protocolLabel: protocolLabel(node.protocol),
@@ -742,7 +775,10 @@ function syncGatewayState(state, gatewayStatus, controller) {
     });
   });
   const selectedServer = gatewayServers.find((server) => server.sourceNodeKey === gatewayStatus.selected);
-  const activeServerId = selectedServer?.id || proxyServer.id;
+  const previousActive = gatewayServers.find((server) => server.id === state.activeServerId);
+  const activeServer = selectedServer || previousActive || proxyServer;
+  const activeServerId = activeServer.id;
+  const combinedServers = [...manualServers, ...gatewayServers];
   return {
     ...state,
     gateway: {
@@ -751,10 +787,10 @@ function syncGatewayState(state, gatewayStatus, controller) {
       connected: true,
       lastSyncAt: new Date().toISOString()
     },
-    servers: [...manualServers, ...gatewayServers],
+    servers: combinedServers,
     subscriptions,
     activeServerId,
-    configured: isServerConfigured(selectedServer || proxyServer),
+    configured: isStateServerConfigured({ ...state, servers: combinedServers }, activeServer),
     enabled: true,
     lastError: null
   };
@@ -849,7 +885,7 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
   const domains = effectiveDomains(state);
   const source = host ? routeSource(host, state) : "direct";
   const activeServer = getActiveServer(state);
-  const configured = isServerConfigured(activeServer);
+  const configured = isStateServerConfigured(state, activeServer);
   const exposeServer = (server) => includeCredentials
     ? {
         ...server,
@@ -1021,7 +1057,7 @@ chrome.webRequest.onAuthRequired.addListener(
     getState()
       .then((state) => {
         if (!details.isProxy) return callback();
-        const server = getActiveServer(state);
+        const server = resolveServerConnection(state);
         const challenger = details.challenger?.host?.toLowerCase();
         if (challenger && challenger !== server.host.toLowerCase()) return callback();
         if (!isServerConfigured(server)) return callback({ cancel: true });
