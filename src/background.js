@@ -756,7 +756,7 @@ async function gatewayRequest(state, path, { method = "GET", body = null, gatewa
   }
   if (!response.ok) {
     if (path === "/v1/nodes/ping" && response.status === 404) {
-      throw new Error("Обновите Routeva Gateway до версии 0.9.0: сервер пока не поддерживает пинг");
+      throw new Error("Обновите Routeva Gateway до версии 0.9.1: сервер пока не поддерживает пинг");
     }
     throw new Error(payload?.error || `Routeva Gateway ответил HTTP ${response.status}`);
   }
@@ -934,6 +934,15 @@ async function syncRoutevaGateway() {
   await saveState(syncGatewayState(state, payload, gateway));
 }
 
+async function connectRoutevaGateway() {
+  const state = await getState();
+  const controller = normalizeGateway(state.gateway) || inferredGateway(state);
+  const { payload, gateway } = await gatewayRequest(state, "/v1/status", { gateway: controller });
+  const next = await saveState(syncGatewayState(state, payload, gateway));
+  await applyProxy(next);
+  return getPublicStatus(null, next, true);
+}
+
 function getPublicStatus(host, state, includeCredentials = false, includeDomains = false) {
   const domains = effectiveDomains(state);
   const source = host ? routeSource(host, state) : "direct";
@@ -1052,6 +1061,8 @@ async function handleMessage(message) {
       return selectServer(String(message.id ?? ""));
     case "pingServer":
       return pingServer(String(message.id ?? ""));
+    case "connectGateway":
+      return connectRoutevaGateway();
     case "getServerLatencies": {
       const cache = await latencyCache();
       return Object.fromEntries(state.servers.flatMap((server) => {

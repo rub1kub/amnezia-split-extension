@@ -20,7 +20,7 @@ const fixture = () => ({
   subscriptions: [{ id: "test", name: "Example" }]
 });
 
-function harness(fetchImpl, saved = {}) {
+function harness(fetchImpl, saved = {}, allowProxy = false) {
   const store = { state: fixture(), ...structuredClone(saved) };
   const writes = [];
   const chrome = {
@@ -29,9 +29,10 @@ function harness(fetchImpl, saved = {}) {
       set: async (value) => { writes.push(value); Object.assign(store, structuredClone(value)); }
     } },
     proxy: { settings: {
-      set: () => { throw new Error("Ping must not set browser proxy"); },
+      set: () => { if (!allowProxy) throw new Error("Ping must not set browser proxy"); },
       clear: () => { throw new Error("Ping must not clear browser proxy"); }
-    } }
+    } },
+    action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} }
   };
   const context = vm.createContext({ ...rules, ...proxy, ...version, ...latency, chrome, fetch: fetchImpl, URL, AbortSignal, Date, console, btoa, TextEncoder });
   vm.runInContext(code, context);
@@ -79,7 +80,7 @@ test("manual proxies are not switched or measured with misleading direct fetches
 
 test("a legacy Gateway gives an actionable update error without cached fake success", async () => {
   const h = harness(async () => ({ ok: false, status: 404, json: async () => ({ error: "Not found" }) }));
-  await assert.rejects(h.run('pingServer("node")'), /0\.9\.0/);
+  await assert.rejects(h.run('pingServer("node")'), /0\.9\.1/);
   assert.equal(h.writes.length, 0);
 });
 
@@ -91,4 +92,27 @@ test("rejects mismatched IDs and suppresses cached results after configuration c
   await g.run('pingServer("node")');
   g.run('stateCache.gateway.apiUrl = "https://other.example:18445"');
   assert.equal(Object.keys(await g.run('handleMessage({ type: "getServerLatencies" })')).length, 0);
+});
+
+test("connects an existing Gateway using only GET status, without importing or selecting remotely", async () => {
+  const calls = [];
+  const state = fixture();
+  state.gateway = null;
+  state.servers = state.servers.filter((server) => server.source === "manual");
+  state.subscriptions = [];
+  const selected = "[routeva_test] Berlin";
+  const h = harness(async (url, options) => {
+    calls.push({ url, method: options.method });
+    return { ok: true, json: async () => ({
+      selected,
+      nodes: [{ id: "a".repeat(24), key: selected, name: "Berlin", protocol: "vless", subscriptionId: "test" }],
+      subscriptions: [{ id: "test", name: "Existing", nodeCount: 1, protocols: ["vless"] }]
+    }) };
+  }, { state }, true);
+  const result = await h.run('handleMessage({ type: "connectGateway" })');
+  assert.deepEqual(calls, [{ url: "https://gateway.example:18445/v1/status", method: "GET" }]);
+  assert.equal(result.gateway.connected, true);
+  assert.equal(result.servers.length, 2);
+  assert.equal(result.activeServer.sourceNodeKey, selected);
+  assert.equal(h.store.state.subscriptions[0].url, "");
 });

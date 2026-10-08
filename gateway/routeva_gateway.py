@@ -398,8 +398,11 @@ def ping_node(node_id: Any) -> dict[str, Any]:
         if node is None:
             raise ValueError("Узел не найден; обновите список серверов")
         name = urllib.parse.quote(node["key"], safe="")
+        provider = urllib.parse.quote(node["provider"], safe="")
         query = urllib.parse.urlencode({"url": PING_TEST_URL, "timeout": PING_TIMEOUT_MS, "expected": "204"})
-        response = mihomo_request(f"/proxies/{name}/delay?{query}", timeout=8) or {}
+        # Provider nodes are not necessarily present in Mihomo's global proxy map.
+        # Address the node inside its provider instead of reporting a false 404.
+        response = mihomo_request(f"/providers/proxies/{provider}/{name}/healthcheck?{query}", timeout=8) or {}
         delay = response.get("delay") if isinstance(response, dict) else None
         # Mihomo exposes uint16 milliseconds and treats zero as a failed URL-test.
         if isinstance(delay, bool) or not isinstance(delay, int) or not 1 <= delay <= 60000:
@@ -468,7 +471,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
     def dispatch(self, method: str) -> Any:
         path = urllib.parse.urlsplit(self.path).path.rstrip("/") or "/"
         if method == "GET" and path == "/v1/health":
-            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.0", "capabilities": ["node-ping"]}
+            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.1", "capabilities": ["node-ping"]}
         if method == "GET" and path == "/v1/status":
             return build_public_status()
         if method == "POST" and path == "/v1/subscriptions":

@@ -24,8 +24,8 @@ const PREVIEW_STATUS = {
   subscriptionCards: [],
   updateNotice: {
     kind: "installed",
-    version: "0.9.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.9.0"
+    version: "0.9.1",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.9.1"
   }
 };
 
@@ -401,7 +401,7 @@ function latencyTitle(server, latency) {
   if (server.source !== "gateway") return "Пинг доступен для узлов подписки на Routeva Gateway. Ручной прокси не переключается ради теста.";
   const at = latency?.checkedAt ? new Date(latency.checkedAt).toLocaleTimeString("ru-RU") : "ещё не проверялся";
   const stale = latency && !isLatencyFresh(latency) ? "; устарело — перепроверьте" : "";
-  const detail = { busy: "Gateway занят", "core-unavailable": "Mihomo недоступен", "invalid-response": "Некорректный ответ", "gateway-update": "Обновите Gateway до 0.9.0", "api-error": "Не удалось связаться с Gateway" }[latency?.code];
+  const detail = { busy: "Gateway занят", "core-unavailable": "Mihomo недоступен", "invalid-response": "Некорректный ответ", "gateway-update": "Обновите Gateway до 0.9.1", "api-error": "Не удалось связаться с Gateway" }[latency?.code];
   return `HTTPS через Gateway → выбранный узел → gstatic.com; ${at}${stale}${detail ? `; ${detail}` : ""}. Нажмите для проверки.`;
 }
 

@@ -59,7 +59,9 @@ Chrome предоставляет расширениям только HTTP, HTTP
 
 ## Пинг: что именно измеряется
 
-Для пинга нужен Routeva Gateway **0.9.0 или новее**. Старый Gateway продолжает работать для подключения и выбора серверов; при проверке появится просьба обновить его. Инструкция обновления — [gateway/README.md](gateway/README.md#upgrade-to-090).
+Для пинга нужен Routeva Gateway **0.9.1 или новее**. Старый Gateway продолжает работать для подключения и выбора серверов; при проверке появится просьба обновить его. Инструкция обновления — [gateway/README.md](gateway/README.md#upgrade-to-091).
+
+Если подписки уже сохранены на сервере, в настройках расширения сохраните учётные данные HTTPS-прокси, затем в разделе подписок нажмите **«Загрузить серверы из Gateway»**. Повторно импортировать ссылку не нужно; выбранный на Gateway узел не меняется.
 
 Это HTTPS URL-test в Mihomo: **Gateway → проверяемый узел → `https://www.gstatic.com/generate_204`**. Он проверяет работу туннеля и ответа тестового сайта, но **не включает задержку от вашего ПК до Gateway**, не является ICMP/TCP-пингом и не измеряет скорость скачивания. По смыслу соответствует проверке «через прокси» у [Happ](https://www.happ.su/main/ru/faq/ping); ICMP и TCP здесь не имитируются.
 
@@ -81,8 +83,8 @@ npm run package:gateway
 
 - `dist/routeva` — папка для установки через **Загрузить распакованное расширение**;
 - `dist/routeva-extension.zip` — обычный релизный архив;
-- `dist/routeva-0.9.0-store.zip` — архив для Chrome Web Store с `manifest.json` в корне;
-- `dist/routeva-0.9.0-gateway.zip` — исходники и инструкция обновления Gateway без секретов.
+- `dist/routeva-0.9.1-store.zip` — архив для Chrome Web Store с `manifest.json` в корне;
+- `dist/routeva-0.9.1-gateway.zip` — исходники и инструкция обновления Gateway без секретов.
 
 `npm run test:all` запускает JS- и Python-тесты (нужен Python 3.10+). Для UI smoke-теста установите Playwright отдельно (`npm install --no-save playwright`), укажите путь к тестовому Chromium/Brave в `ROUTEVA_BROWSER_PATH` и выполните `npm run test:ui`. Тест использует изолированный временный профиль, не обычный профиль браузера. Можно указать установленный Playwright через `ROUTEVA_PLAYWRIGHT_PATH`.
 

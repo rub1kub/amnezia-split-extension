@@ -6,7 +6,8 @@ const os = require("node:os");
 const http = require("node:http");
 const { chromium } = require(process.env.ROUTEVA_PLAYWRIGHT_PATH || "playwright");
 const root = path.resolve(__dirname, "..");
-const out = path.join(root, "artifacts", "audit", "v0.9.0");
+const version = require(path.join(root, "manifest.json")).version;
+const out = path.join(root, "artifacts", "audit", `v${version}`);
 const executablePath = process.env.ROUTEVA_BROWSER_PATH;
 
 async function main() {
@@ -115,6 +116,13 @@ async function main() {
     await live.locator("#serverSort").selectOption("latency");
     await live.screenshot({ path: path.join(out, "servers-checked.png") });
     await live.close();
+    const options = await browser.newPage();
+    options.on("pageerror", (error) => errors.push(error.message));
+    await options.goto(`${origin}/src/options.html?preview`);
+    await options.locator("#connectGateway").click();
+    await options.locator("#toast").filter({ hasText: "серверов" }).waitFor();
+    assert.equal(await options.locator("#connectGateway").isEnabled(), true);
+    await options.close();
     assert.deepEqual(errors, []);
     console.log("UI smoke: 286-node list, search/filter/sort, batch cancel, real-popup messages, concurrency=3, timeout, XSS, selection, keyboard, 380×600 layout: PASS");
   } finally {
@@ -133,7 +141,7 @@ async function main() {
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker", { timeout: 15000 });
     const status = await worker.evaluate(() => ({ version: chrome.runtime.getManifest().version, manifestVersion: chrome.runtime.getManifest().manifest_version }));
-    assert.equal(status.version, "0.9.0");
+    assert.equal(status.version, version);
     assert.equal(status.manifestVersion, 3);
     const extensionId = new URL(worker.url()).host;
     // Finish the install listener's automatic options navigation before opening our popup.
@@ -154,7 +162,7 @@ async function main() {
     const response = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "getStatus" }));
     assert.equal(response.ok, true);
     assert.equal(response.data.servers.length, 1);
-    console.log("Actual isolated Brave MV3 install: version 0.9.0, service worker and popup: PASS");
+    console.log(`Actual isolated Brave MV3 install: version ${version}, service worker and popup: PASS`);
   } finally {
     if (context) await context.close();
     // temp was created above; deletion cannot target the user's ordinary browser profile.

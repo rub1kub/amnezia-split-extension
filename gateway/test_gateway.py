@@ -93,7 +93,7 @@ class GatewayConfigTests(unittest.TestCase):
 
 class GatewayPingTests(unittest.TestCase):
     node_id = "a" * 24
-    node = {"id": node_id, "key": "[routeva_test] Berlin / ?#", "name": "Berlin"}
+    node = {"id": node_id, "key": "[routeva_test] Berlin / ?#", "name": "Berlin", "provider": "routeva_test"}
 
     def setUp(self):
         self.snapshot = mock.patch.object(gateway, "provider_snapshot", return_value={"routeva_test": [self.node]}).start()
@@ -108,7 +108,7 @@ class GatewayPingTests(unittest.TestCase):
         self.assertEqual(result["vantage"], "gateway")
         self.assertEqual(result["status"], "ok")
         path = self.request.call_args.args[0]
-        self.assertTrue(path.startswith("/proxies/%5Brouteva_test%5D%20Berlin%20%2F%20%3F%23/delay?"))
+        self.assertTrue(path.startswith("/providers/proxies/routeva_test/%5Brouteva_test%5D%20Berlin%20%2F%20%3F%23/healthcheck?"))
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
         self.assertEqual(query["url"], [gateway.PING_TEST_URL])
         self.assertEqual(query["timeout"], ["6000"])
@@ -117,6 +117,15 @@ class GatewayPingTests(unittest.TestCase):
         self.save.assert_not_called()
         self.restart.assert_not_called()
         self.assertNotIn("key", result)
+
+    def test_provider_node_is_tested_when_global_proxy_map_returns_404(self):
+        def core(path, **kwargs):
+            if path.startswith('/proxies/'):
+                raise gateway.MihomoAPIError(404, 'Global proxy not found')
+            self.assertIn('/providers/proxies/routeva_test/', path)
+            return {"delay": 91}
+        self.request.side_effect = core
+        self.assertEqual(gateway.ping_node(self.node_id)["delayMs"], 91)
 
     def test_invalid_or_unknown_id_never_reaches_core_url_test(self):
         for value in [None, [], "http://localhost", "../../proxies", "a" * 23]:

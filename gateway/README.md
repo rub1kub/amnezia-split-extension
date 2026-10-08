@@ -60,19 +60,20 @@ The extension derives the Gateway URL from the active proxy hostname and uses
 port `18445`. Provider files refresh in Mihomo every hour; the extension also
 synchronizes its node cards every hour.
 
-## Upgrade to 0.9.0
+## Upgrade to 0.9.1
 
 The new extension's node ping needs the updated Python API. An older Gateway can
 still select nodes; it responds 404 to the new ping endpoint and the extension
 shows an update instruction. No subscription reimport or Mihomo config rewrite is
-needed for this upgrade.
+needed for this upgrade. Version 0.9.1 also fixes the provider-node ping path:
+provider outbounds are not necessarily present in Mihomo's global proxy map.
 
 On your Gateway server, back up the existing script, then install this release's
 `gateway/routeva_gateway.py` and restart **only the control API**, not Mihomo or
 your local Happ VPN:
 
 ```bash
-sudo cp /opt/routeva-gateway/routeva_gateway.py /opt/routeva-gateway/routeva_gateway.py.before-0.9.0
+sudo cp /opt/routeva-gateway/routeva_gateway.py /opt/routeva-gateway/routeva_gateway.py.before-0.9.1
 sudo install -m 755 gateway/routeva_gateway.py /opt/routeva-gateway/routeva_gateway.py
 sudo systemctl restart routeva-gateway
 sudo systemctl status routeva-gateway --no-pager
@@ -89,7 +90,8 @@ the backed-up script and restart only `routeva-gateway`.
 It uses the same Basic Auth as the rest of the API. Clients cannot override the
 URL, port or controller path. Only nodes in `routeva_` providers can be tested.
 
-Mihomo's [proxy delay endpoint](https://wiki.metacubex.one/api/) performs the
+Mihomo's provider-node healthcheck endpoint
+`/providers/proxies/{provider}/{node}/healthcheck` performs the
 HTTPS URL-test through that specific outbound to the fixed
 `https://www.gstatic.com/generate_204` target (6-second test timeout, expected
 HTTP status 204). It does not

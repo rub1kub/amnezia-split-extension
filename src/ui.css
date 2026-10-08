@@ -31,6 +31,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 
 .popup-page { width: 380px; min-height: 600px; background: #f8faf9; }
 .popup-shell { padding: 16px; }
+.gateway-existing { margin: 0 0 18px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f6faf8; }
+.gateway-existing p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--muted); }
 
 /* Compact server picker stays in the browser action popup, not a settings tab. */
 .open-server-list { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 12px; background: white; font-size: 12px; font-weight: 650; cursor: pointer; }

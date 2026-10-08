@@ -68,8 +68,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.9.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.9.0"
+    version: "0.9.1",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.9.1"
   }
 };
 let status = null;
@@ -403,6 +403,20 @@ $("#showPassword").addEventListener("click", () => {
   const show = input.type === "password";
   input.type = show ? "text" : "password";
   $("#showPassword").textContent = show ? "Скрыть" : "Показать";
+});
+
+$("#connectGateway").addEventListener("click", async () => {
+  const button = $("#connectGateway");
+  button.disabled = true;
+  try {
+    const next = await send("connectGateway");
+    render(next);
+    toast(`Загружено серверов: ${next.servers.filter((server) => server.source === "gateway").length}`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("#connectionForm").addEventListener("submit", async (event) => {

@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Настройка — Routeva</title>
-    <link rel="stylesheet" href="ui.css?v=0.9.0" />
+    <link rel="stylesheet" href="ui.css?v=0.9.1" />
   </head>
   <body class="options-page">
     <main class="options-shell">
       <header class="options-header">
         <div class="brand large">
-          <img src="../assets/icon-48.png?v=0.9.0" width="48" height="48" alt="" />
+          <img src="../assets/icon-48.png?v=0.9.1" width="48" height="48" alt="" />
           <div><strong>Routeva</strong><span>Ваш интернет — по вашим правилам</span></div>
         </div>
         <div class="header-status"><span id="headerDot"></span><strong id="headerStatus">Настройка</strong></div>
@@ -73,6 +73,10 @@
             <img src="../assets/icons/shield-check.svg" width="22" height="22" alt="" />
             <div><strong>Вставьте ссылку — и всё готово</strong><span>Routeva найдёт серверы, страны и протоколы автоматически.</span></div>
           </div>
+          <div class="gateway-existing">
+            <p>Подписки уже добавлены на Gateway? Сначала сохраните логин и пароль во вкладке «Вручную», затем загрузите существующий список.</p>
+            <button class="secondary-button" id="connectGateway" type="button">Загрузить серверы из Gateway</button>
+          </div>
           <form class="subscription-form" id="subscriptionForm">
             <label class="field subscription-url"><span>Ссылка подписки</span><div class="input-action"><input id="subscriptionUrl" type="password" placeholder="https://provider.example/ваша-ссылка" autocomplete="off" spellcheck="false" required /><button id="showSubscriptionUrl" type="button">Показать</button></div></label>
             <label class="field"><span>Название · необязательно</span><input id="subscriptionName" type="text" placeholder="Например, Quattro Cloud" autocomplete="off" /></label>
@@ -125,9 +129,9 @@
         </div>
       </section>
 
-      <footer class="options-footer"><span>Routeva 0.9.0 · ваш Gateway</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Источники списков</a></footer>
+      <footer class="options-footer"><span>Routeva 0.9.1 · ваш Gateway</span><a href="https://github.com/itdoginfo/allow-domains" target="_blank" rel="noreferrer">Источники списков</a></footer>
       <div class="toast hidden" id="toast" role="status"></div>
     </main>
-    <script type="module" src="options.js?v=0.9.0"></script>
+    <script type="module" src="options.js?v=0.9.1"></script>
   </body>
 </html>
