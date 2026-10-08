@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Routeva</title>
-    <link rel="stylesheet" href="ui.css?v=0.8.0-r1" />
+    <link rel="stylesheet" href="ui.css?v=0.9.0" />
   </head>
   <body class="popup-page">
     <main class="popup-shell">
       <header class="app-header">
         <div class="brand">
-          <img src="../assets/icon-32.png?v=0.8.0" width="32" height="32" alt="" />
+          <img src="../assets/icon-32.png?v=0.9.0" width="32" height="32" alt="" />
           <div>
             <strong>Routeva</strong>
             <span>Ваш интернет — по вашим правилам</span>
@@ -28,6 +28,7 @@
         <button id="dismissUpdate" type="button" aria-label="Скрыть уведомление">×</button>
       </aside>
 
+      <div id="mainView">
       <section class="server-deck" id="serverDeck" aria-label="Выбранный сервер">
         <div class="server-track" id="serverTrack"></div>
         <button class="power-switch" id="masterToggle" type="button" role="switch" aria-checked="true" aria-label="Включить или выключить VPN">
@@ -45,16 +46,10 @@
             <img src="../assets/icons/caret-right.svg" width="16" height="16" alt="" />
           </button>
         </nav>
-        <div class="server-search" id="serverSearch">
-          <label class="server-search-field" for="serverSearchInput">
-            <img src="../assets/icons/magnifying-glass.svg" width="16" height="16" alt="" />
-            <input id="serverSearchInput" type="search" placeholder="Найти сервер" autocomplete="off" spellcheck="false" aria-label="Найти сервер или страну" />
-            <button class="server-search-clear hidden" id="serverSearchClear" type="button" aria-label="Очистить поиск">
-              <img src="../assets/icons/x.svg" width="14" height="14" alt="" />
-            </button>
-          </label>
-          <div class="server-search-results hidden" id="serverSearchResults" role="listbox" aria-label="Результаты поиска серверов"></div>
-        </div>
+        <button class="open-server-list" id="openServerList" type="button">
+          <img src="../assets/icons/magnifying-glass.svg" width="16" height="16" alt="" />
+          Серверы и пинг <span id="serverListCount">0</span>
+        </button>
       </section>
 
       <div class="route-mode" role="group" aria-label="Режим VPN">
@@ -81,10 +76,44 @@
         </div>
         <button class="mini-toggle" id="communityToggle" type="button" role="switch" aria-checked="true" aria-label="Использовать автоматический список"><span></span></button>
       </section>
+      <footer id="routeFooter"><span class="privacy-dot"></span> Остальные сайты подключаются напрямую</footer>
+      </div>
+
+      <section class="servers-view hidden" id="serversView" aria-label="Список серверов">
+        <header class="servers-heading">
+          <button class="servers-back" id="closeServerList" type="button" aria-label="Назад">
+            <img src="../assets/icons/caret-left.svg" width="18" height="18" alt="" />
+          </button>
+          <h1>Серверы <span id="filteredServerCount">0</span></h1>
+          <button class="ping-all" id="pingAll" type="button" title="Проверить все серверы в текущем фильтре">Пинг всех</button>
+        </header>
+        <div class="server-search list-search" id="serverSearch">
+          <label class="server-search-field" for="serverSearchInput">
+            <img src="../assets/icons/magnifying-glass.svg" width="16" height="16" alt="" />
+            <input id="serverSearchInput" type="search" placeholder="Найти сервер" autocomplete="off" spellcheck="false" aria-label="Найти сервер или страну" />
+            <button class="server-search-clear hidden" id="serverSearchClear" type="button" aria-label="Очистить поиск">
+              <img src="../assets/icons/x.svg" width="14" height="14" alt="" />
+            </button>
+          </label>
+        </div>
+        <div class="servers-filters">
+          <select id="serverFilter" aria-label="Подписка"><option value="all">Все серверы</option></select>
+          <select id="serverSort" aria-label="Сортировка серверов">
+            <option value="original">Порядок подписки</option>
+            <option value="latency">По пингу</option>
+            <option value="name">По названию</option>
+          </select>
+        </div>
+        <div class="ping-preferences">
+          <label><input id="autoPing" type="checkbox" /> Пинг при открытии списка</label>
+          <span id="pingProgress" role="status" aria-live="polite"></span>
+        </div>
+        <div class="server-list" id="serverSearchResults" aria-label="Выбор сервера"></div>
+        <p class="ping-explanation">HTTPS-проверка через сервер Gateway, не пинг от вашего ПК. Текущий VPN-сервер не переключается. Нажмите задержку для повторной проверки.</p>
+      </section>
 
       <p class="notice hidden" id="notice" role="status"></p>
-      <footer id="routeFooter"><span class="privacy-dot"></span> Остальные сайты подключаются напрямую</footer>
     </main>
-    <script type="module" src="popup.js?v=0.8.0-r2"></script>
+    <script type="module" src="popup.js?v=0.9.0"></script>
   </body>
 </html>

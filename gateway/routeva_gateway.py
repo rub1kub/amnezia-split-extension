@@ -13,6 +13,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -39,6 +40,15 @@ LISTEN_PORT = int(os.environ.get("ROUTEVA_LISTEN_PORT", "18446"))
 MIHOMO_SERVICE = os.environ.get("ROUTEVA_MIHOMO_SERVICE", "routeva-mihomo.service")
 MAX_BODY = 64 * 1024
 STATE_LOCK = threading.RLock()
+PING_SLOTS = threading.BoundedSemaphore(4)
+PING_TEST_URL = "https://www.gstatic.com/generate_204"
+PING_TIMEOUT_MS = 6000
+
+
+class MihomoAPIError(RuntimeError):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
 
 
 def utc_now() -> str:
@@ -184,7 +194,7 @@ def mihomo_request(path: str, method: str = "GET", payload: Any = None, timeout:
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as error:
         message = error.read().decode("utf-8", "replace")[:300]
-        raise RuntimeError(f"Mihomo API: HTTP {error.code} {message}") from error
+        raise MihomoAPIError(error.code, f"Mihomo API: HTTP {error.code} {message}") from error
 
 
 def restart_mihomo() -> None:
@@ -208,8 +218,8 @@ def restart_mihomo() -> None:
     raise RuntimeError(f"Routeva tunnel не запустился: {last_error}")
 
 
-def provider_snapshot() -> dict[str, list[dict[str, Any]]]:
-    data = mihomo_request("/providers/proxies") or {}
+def provider_snapshot(timeout: float = 20) -> dict[str, list[dict[str, Any]]]:
+    data = mihomo_request("/providers/proxies", timeout=timeout) or {}
     result: dict[str, list[dict[str, Any]]] = {}
     for key, provider in (data.get("providers") or {}).items():
         if not str(key).startswith("routeva_"):
@@ -276,6 +286,7 @@ def build_public_status(wait_provider_id: str | None = None) -> dict[str, Any]:
     selected = current_selection()
     return {
         "version": 1,
+        "capabilities": ["node-ping"],
         "ready": True,
         "selected": selected,
         "subscriptions": subscriptions,
@@ -370,6 +381,44 @@ def select_node(name: str) -> dict[str, Any]:
     }
 
 
+def ping_node(node_id: Any) -> dict[str, Any]:
+    """URL-test one known provider node, without selecting it or changing config.
+
+    Caller cannot supply a URL, host, port or arbitrary controller path. Measurements
+    start at this Gateway, not the extension user's PC. No subscription keys in results.
+    """
+    if not isinstance(node_id, str) or not re.fullmatch(r"[a-f0-9]{24}", node_id):
+        raise ValueError("Некорректный идентификатор узла")
+    result = {"id": node_id, "method": "gateway-proxy", "vantage": "gateway", "target": PING_TEST_URL}
+    if not PING_SLOTS.acquire(blocking=False):
+        return {**result, "status": "error", "delayMs": None, "code": "busy", "checkedAt": utc_now()}
+    try:
+        nodes = [node for group in provider_snapshot(timeout=3).values() for node in group]
+        node = next((item for item in nodes if item["id"] == node_id), None)
+        if node is None:
+            raise ValueError("Узел не найден; обновите список серверов")
+        name = urllib.parse.quote(node["key"], safe="")
+        query = urllib.parse.urlencode({"url": PING_TEST_URL, "timeout": PING_TIMEOUT_MS, "expected": "204"})
+        response = mihomo_request(f"/proxies/{name}/delay?{query}", timeout=8) or {}
+        delay = response.get("delay") if isinstance(response, dict) else None
+        # Mihomo exposes uint16 milliseconds and treats zero as a failed URL-test.
+        if isinstance(delay, bool) or not isinstance(delay, int) or not 1 <= delay <= 60000:
+            return {**result, "status": "error", "delayMs": None, "code": "invalid-response", "checkedAt": utc_now()}
+        return {**result, "status": "ok", "delayMs": round(delay), "code": None, "checkedAt": utc_now()}
+    except MihomoAPIError as error:
+        code = "timeout" if error.status in (408, 504) else "unavailable"
+        return {**result, "status": code, "delayMs": None, "code": code, "checkedAt": utc_now()}
+    except (TimeoutError, socket.timeout):
+        return {**result, "status": "timeout", "delayMs": None, "code": "timeout", "checkedAt": utc_now()}
+    except json.JSONDecodeError:
+        return {**result, "status": "error", "delayMs": None, "code": "invalid-response", "checkedAt": utc_now()}
+    except (urllib.error.URLError, OSError, RuntimeError, AttributeError, TypeError):
+        # Never forward raw controller errors: they may contain provider URLs/keys.
+        return {**result, "status": "error", "delayMs": None, "code": "core-unavailable", "checkedAt": utc_now()}
+    finally:
+        PING_SLOTS.release()
+
+
 class GatewayHandler(BaseHTTPRequestHandler):
     server_version = "RoutevaGateway/1"
 
@@ -419,13 +468,15 @@ class GatewayHandler(BaseHTTPRequestHandler):
     def dispatch(self, method: str) -> Any:
         path = urllib.parse.urlsplit(self.path).path.rstrip("/") or "/"
         if method == "GET" and path == "/v1/health":
-            return {"ready": True, "service": "routeva-gateway", "version": 1}
+            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.0", "capabilities": ["node-ping"]}
         if method == "GET" and path == "/v1/status":
             return build_public_status()
         if method == "POST" and path == "/v1/subscriptions":
             return add_subscription(self.read_json())
         if method == "PUT" and path == "/v1/nodes/select":
             return select_node(self.read_json().get("name"))
+        if method == "POST" and path == "/v1/nodes/ping":
+            return ping_node(self.read_json().get("id"))
         parts = path.split("/")
         if len(parts) == 4 and parts[1:3] == ["v1", "subscriptions"]:
             subscription_id = urllib.parse.unquote(parts[3])

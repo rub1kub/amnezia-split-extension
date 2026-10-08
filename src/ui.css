@@ -32,6 +32,48 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .popup-page { width: 380px; min-height: 600px; background: #f8faf9; }
 .popup-shell { padding: 16px; }
 
+/* Compact server picker stays in the browser action popup, not a settings tab. */
+.open-server-list { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 12px; background: white; font-size: 12px; font-weight: 650; cursor: pointer; }
+.open-server-list:hover { background: var(--green-soft); border-color: #b6d8c9; }
+.open-server-list span { min-width: 20px; padding: 2px 5px; border-radius: 6px; color: var(--green-dark); background: var(--green-soft); font-size: 10px; }
+.servers-view { display: flex; flex-direction: column; height: 506px; gap: 10px; }
+.servers-heading { display: flex; align-items: center; gap: 10px; }
+.servers-heading h1 { margin: 0; flex: 1; font-size: 19px; letter-spacing: -.025em; }
+.servers-heading h1 span { color: var(--muted); font-size: 11px; font-weight: 500; }
+.servers-back { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: white; cursor: pointer; }
+.ping-all { border: 1px solid #b6d8c9; border-radius: 10px; min-height: 32px; padding: 0 11px; color: var(--green-dark); background: var(--green-soft); font-size: 11px; font-weight: 700; cursor: pointer; }
+.ping-all:disabled { opacity: .5; cursor: default; }
+.list-search { width: 100%; flex: none; }
+.list-search .server-search-field { width: 100%; }
+.list-search input { width: 100%; min-width: 0; }
+.servers-filters { display: flex; gap: 8px; }
+.servers-filters select { width: 50%; min-width: 0; padding: 7px 6px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink-soft); background: white; font-size: 11px; }
+.ping-preferences { display: flex; justify-content: space-between; align-items: center; gap: 5px; min-height: 20px; font-size: 10px; color: var(--muted); }
+.ping-preferences label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.ping-preferences input { margin: 0; accent-color: var(--green-dark); }
+.ping-preferences #pingProgress { font-variant-numeric: tabular-nums; }
+.server-list { flex: 1; min-height: 100px; overflow-y: auto; scrollbar-width: thin; border: 1px solid var(--line); border-radius: 14px; background: white; }
+.server-row { display: flex; align-items: center; min-height: 56px; padding: 4px 8px; border-bottom: 1px solid #edf1ee; border-left: 3px solid transparent; }
+.server-row:last-child { border-bottom: 0; }
+.server-row:hover { background: #f5f9f7; }
+.server-row.is-selected { border-left-color: var(--green); background: #eaf6f0; }
+.server-choice { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; border: 0; background: transparent; padding: 6px 0; text-align: left; cursor: pointer; }
+.server-choice:disabled { cursor: wait; opacity: .6; }
+.server-flag { display: block; flex: 0 0 26px; width: 26px; height: 19px; object-fit: cover; border-radius: 3px; color: var(--muted); text-align: center; }
+.server-row-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.server-row-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.server-row-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--muted); }
+.server-latency { flex: 0 0 74px; min-height: 30px; margin-left: 4px; padding: 5px 3px; border: 0; border-radius: 8px; background: transparent; font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; cursor: pointer; }
+.server-latency:hover:not(:disabled) { background: rgba(12,165,119,.08); }
+.server-latency:disabled { cursor: default; }
+.tone-unknown { color: #657a6d; }
+.tone-good { color: #087455; }
+.tone-medium { color: #946305; }
+.tone-slow, .tone-error { color: #b53838; }
+.server-latency.is-stale { color: #748378; text-decoration: underline dotted; text-underline-offset: 3px; }
+.ping-explanation { margin: 0; color: #6b7b72; font-size: 10px; line-height: 1.5; }
+.popup-page #notice { position: fixed; z-index: 50; bottom: 12px; left: 16px; width: 348px; box-shadow: var(--shadow-md); }
+
 .app-header, .options-header { display: flex; align-items: center; justify-content: space-between; }
 .app-header { min-height: 40px; margin-bottom: 14px; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -291,25 +333,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .server-search-field input::-webkit-search-cancel-button { display: none; }
 .server-search-clear { flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 9px; background: #f0f4f2; cursor: pointer; }
 .server-search-clear img { width: 12px; height: 12px; opacity: .58; }
-.server-search-results {
-  position: absolute;
-  z-index: 20;
-  top: 49px;
-  right: 0;
-  width: 348px;
-  max-height: 250px;
-  overflow-y: auto;
-  padding: 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 20px 48px rgba(16, 42, 33, .2);
-}
-.server-search-result { width: 100%; display: flex; align-items: center; padding: 10px 11px; border: 0; border-radius: 11px; background: transparent; text-align: left; cursor: pointer; }
-.server-search-result:hover, .server-search-result[aria-selected="true"] { background: var(--green-soft); }
-.server-search-result > span { display: flex; flex-direction: column; min-width: 0; }
-.server-search-result strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.server-search-result small { overflow: hidden; margin-top: 3px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .server-search-empty { margin: 0; padding: 16px 10px; color: var(--muted); font-size: 11px; text-align: center; }
 
 .route-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 10px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: #edf2ef; }

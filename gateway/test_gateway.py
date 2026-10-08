@@ -1,4 +1,10 @@
 import unittest
+import json
+import base64
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from unittest import mock
 
 from gateway import routeva_gateway as gateway
@@ -83,6 +89,97 @@ class GatewayConfigTests(unittest.TestCase):
         save_state.assert_called_once()
         self.assertEqual(result["selected"], "[routeva_one] Berlin")
         self.assertNotIn("nodes", result)
+
+
+class GatewayPingTests(unittest.TestCase):
+    node_id = "a" * 24
+    node = {"id": node_id, "key": "[routeva_test] Berlin / ?#", "name": "Berlin"}
+
+    def setUp(self):
+        self.snapshot = mock.patch.object(gateway, "provider_snapshot", return_value={"routeva_test": [self.node]}).start()
+        self.request = mock.patch.object(gateway, "mihomo_request", return_value={"delay": 73}).start()
+        self.save = mock.patch.object(gateway, "save_state").start()
+        self.restart = mock.patch.object(gateway, "restart_mihomo").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_fixed_url_encoded_node_and_no_selection_or_config_writes(self):
+        result = gateway.ping_node(self.node_id)
+        self.assertEqual(result["delayMs"], 73)
+        self.assertEqual(result["vantage"], "gateway")
+        self.assertEqual(result["status"], "ok")
+        path = self.request.call_args.args[0]
+        self.assertTrue(path.startswith("/proxies/%5Brouteva_test%5D%20Berlin%20%2F%20%3F%23/delay?"))
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+        self.assertEqual(query["url"], [gateway.PING_TEST_URL])
+        self.assertEqual(query["timeout"], ["6000"])
+        self.assertEqual(query["expected"], ["204"])
+        self.assertEqual(self.request.call_args.kwargs, {"timeout": 8})
+        self.save.assert_not_called()
+        self.restart.assert_not_called()
+        self.assertNotIn("key", result)
+
+    def test_invalid_or_unknown_id_never_reaches_core_url_test(self):
+        for value in [None, [], "http://localhost", "../../proxies", "a" * 23]:
+            with self.assertRaises(ValueError):
+                gateway.ping_node(value)
+        with self.assertRaises(ValueError):
+            gateway.ping_node("b" * 24)
+        self.request.assert_not_called()
+
+    def test_bad_measurements_not_converted_to_zero(self):
+        for response in [{}, {"delay": None}, {"delay": False}, {"delay": 0}, {"delay": 0.4}, {"delay": -1}, {"delay": float("nan")}, {"delay": 60001}, {"delay": "0"}, [123]]:
+            self.request.return_value = response
+            result = gateway.ping_node(self.node_id)
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(result["code"], "invalid-response")
+            self.assertIsNone(result["delayMs"])
+
+    def test_timeouts_and_errors_are_safe_and_release_slots(self):
+        for exception, expected in [(TimeoutError(), "timeout"), (gateway.MihomoAPIError(504, "secret"), "timeout"), (gateway.MihomoAPIError(500, "secret"), "unavailable"), (RuntimeError("private subscription token"), "error")]:
+            self.request.side_effect = exception
+            result = gateway.ping_node(self.node_id)
+            self.assertEqual(result["status"], expected)
+            self.assertNotIn("secret", json.dumps(result))
+            self.assertNotIn("private", json.dumps(result))
+        self.request.side_effect = None
+        self.assertEqual(gateway.ping_node(self.node_id)["status"], "ok")
+
+    def test_core_snapshot_error_is_not_forwarded(self):
+        self.snapshot.side_effect = RuntimeError("private provider URL")
+        result = gateway.ping_node(self.node_id)
+        self.assertEqual(result["code"], "core-unavailable")
+        self.assertNotIn("private", json.dumps(result))
+
+    def test_busy_queue_does_not_make_network_requests(self):
+        slots = threading.BoundedSemaphore(1)
+        slots.acquire()
+        with mock.patch.object(gateway, "PING_SLOTS", slots):
+            self.assertEqual(gateway.ping_node(self.node_id)["code"], "busy")
+        slots.release()
+        self.snapshot.assert_not_called()
+        self.request.assert_not_called()
+
+    def test_http_auth_dispatch_and_fixed_target(self):
+        server = gateway.ThreadingHTTPServer(("127.0.0.1", 0), gateway.GatewayHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        url = f"http://127.0.0.1:{server.server_port}/v1/nodes/ping"
+        body = json.dumps({"id": self.node_id, "url": "http://127.0.0.1/private"}).encode()
+        try:
+            with mock.patch.object(gateway, "API_USERNAME", "test"), mock.patch.object(gateway, "API_PASSWORD", "test-only"):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(urllib.request.Request(url, data=body), timeout=3)
+                self.assertEqual(error.exception.code, 401)
+                self.request.assert_not_called()
+                headers = {"Authorization": "Basic " + base64.b64encode(b"test:test-only").decode(), "Content-Type": "application/json"}
+                with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers), timeout=3) as response:
+                    result = json.load(response)
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(result["target"], gateway.PING_TEST_URL)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
 
 
 if __name__ == "__main__":

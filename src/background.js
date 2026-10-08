@@ -9,6 +9,7 @@ import {
   routeSource
 } from "../lib/rules.js";
 import { compareVersions, releaseUrl } from "../lib/version.js";
+import { normalizeLatency } from "../lib/latency.js";
 import {
   countryFlag,
   countryName,
@@ -69,6 +70,55 @@ const DEFAULT_STATE = Object.freeze({
 
 let stateCache = null;
 const proxyAuthAttempts = new Map();
+const pingFlights = new Map();
+let latencyCachePromise;
+let latencySaveQueue = Promise.resolve();
+
+async function latencyCache() {
+  latencyCachePromise ||= chrome.storage.local.get("serverLatencies")
+    .then(({ serverLatencies }) => new Map(Object.entries(serverLatencies || {})));
+  return latencyCachePromise;
+}
+
+function latencyKey(state, server) {
+  // Bind cached results to the node and API address, not just a reused browser ID.
+  const gatewayProxy = getGatewayProxyServer(state);
+  return JSON.stringify([state.gateway?.apiUrl || "", gatewayProxy?.id, gatewayProxy?.username, server.gatewayNodeId, server.sourceNodeKey]);
+}
+
+async function pingServer(id) {
+  const state = await getState();
+  const server = state.servers.find((item) => item.id === id);
+  if (!server) throw new Error("Сервер не найден");
+  if (server.source !== "gateway" || !state.gateway?.enabled) {
+    return { id, latency: normalizeLatency({ status: "unsupported", code: "unsupported", checkedAt: new Date().toISOString() }) };
+  }
+  const key = latencyKey(state, server);
+  const flightKey = `${id}\0${key}`;
+  if (pingFlights.has(flightKey)) return pingFlights.get(flightKey);
+  const flight = (async () => {
+    const { payload } = await gatewayRequest(state, "/v1/nodes/ping", {
+      method: "POST", body: { id: server.gatewayNodeId }
+    });
+    if (payload?.id !== server.gatewayNodeId || payload?.method !== "gateway-proxy") {
+      throw new Error("Gateway вернул некорректный результат пинга");
+    }
+    const latency = normalizeLatency(payload);
+    const current = await getState();
+    const currentServer = current.servers.find((item) => item.id === id);
+    if (!currentServer || latencyKey(current, currentServer) !== key) throw new Error("Настройки сервера изменились во время проверки");
+    const cache = await latencyCache();
+    cache.set(id, { key, latency });
+    // Bounded, separate cache: no proxy/state rewrites, no lost concurrent results.
+    while (cache.size > 2000) cache.delete(cache.keys().next().value);
+    latencySaveQueue = latencySaveQueue.catch(() => {}).then(() =>
+      chrome.storage.local.set({ serverLatencies: Object.fromEntries(cache) }));
+    await latencySaveQueue;
+    return { id, latency };
+  })().finally(() => pingFlights.delete(flightKey));
+  pingFlights.set(flightKey, flight);
+  return flight;
+}
 
 function normalizeServer(server = {}, fallbackId = "server-1", fallbackName = "Сервер") {
   const source = ["subscription", "gateway"].includes(server.source) ? server.source : "manual";
@@ -696,7 +746,7 @@ async function gatewayRequest(state, path, { method = "GET", body = null, gatewa
       ...(body ? { "Content-Type": "application/json" } : {})
     },
     body: body ? JSON.stringify(body) : null,
-    signal: AbortSignal.timeout(method === "POST" ? 65000 : 30000)
+    signal: AbortSignal.timeout(path === "/v1/nodes/ping" ? 15000 : method === "POST" ? 65000 : 30000)
   });
   let payload = null;
   try {
@@ -705,6 +755,9 @@ async function gatewayRequest(state, path, { method = "GET", body = null, gatewa
     // The error below remains understandable if a reverse proxy returned HTML.
   }
   if (!response.ok) {
+    if (path === "/v1/nodes/ping" && response.status === 404) {
+      throw new Error("Обновите Routeva Gateway до версии 0.9.0: сервер пока не поддерживает пинг");
+    }
     throw new Error(payload?.error || `Routeva Gateway ответил HTTP ${response.status}`);
   }
   return { payload, gateway: controller };
@@ -886,9 +939,11 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
   const source = host ? routeSource(host, state) : "direct";
   const activeServer = getActiveServer(state);
   const configured = isStateServerConfigured(state, activeServer);
+  const subscriptionName = (server) => state.subscriptions.find((item) => item.id === server.subscriptionId)?.name || "";
   const exposeServer = (server) => includeCredentials
     ? {
         ...server,
+        subscriptionName: subscriptionName(server),
         protocolLabel: protocolLabel(server.protocol || server.scheme),
         flag: countryFlag(server.countryCode)
       }
@@ -904,6 +959,7 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
         hasPassword: Boolean(server.password),
         source: server.source,
         subscriptionId: server.subscriptionId,
+        subscriptionName: subscriptionName(server),
         gatewayNodeId: server.gatewayNodeId,
         declaredCountryCode: server.declaredCountryCode,
         countryCode: server.countryCode,
@@ -994,6 +1050,15 @@ async function handleMessage(message) {
       return saveServer(message.server ?? {});
     case "selectServer":
       return selectServer(String(message.id ?? ""));
+    case "pingServer":
+      return pingServer(String(message.id ?? ""));
+    case "getServerLatencies": {
+      const cache = await latencyCache();
+      return Object.fromEntries(state.servers.flatMap((server) => {
+        const entry = cache.get(server.id);
+        return entry?.key === latencyKey(state, server) ? [[server.id, normalizeLatency(entry.latency)]] : [];
+      }));
+    }
     case "deleteServer":
       return deleteServer(String(message.id ?? ""));
     case "importSubscription":

@@ -68,8 +68,8 @@ const PREVIEW_STATUS = {
   ],
   updateNotice: {
     kind: "installed",
-    version: "0.8.0",
-    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.8.0"
+    version: "0.9.0",
+    url: "https://github.com/rub1kub/amnezia-split-extension/releases/tag/v0.9.0"
   }
 };
 let status = null;

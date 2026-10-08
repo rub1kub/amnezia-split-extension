@@ -59,3 +59,45 @@ curl -u 'proxy-login:proxy-password' https://your-domain.example:18445/v1/health
 The extension derives the Gateway URL from the active proxy hostname and uses
 port `18445`. Provider files refresh in Mihomo every hour; the extension also
 synchronizes its node cards every hour.
+
+## Upgrade to 0.9.0
+
+The new extension's node ping needs the updated Python API. An older Gateway can
+still select nodes; it responds 404 to the new ping endpoint and the extension
+shows an update instruction. No subscription reimport or Mihomo config rewrite is
+needed for this upgrade.
+
+On your Gateway server, back up the existing script, then install this release's
+`gateway/routeva_gateway.py` and restart **only the control API**, not Mihomo or
+your local Happ VPN:
+
+```bash
+sudo cp /opt/routeva-gateway/routeva_gateway.py /opt/routeva-gateway/routeva_gateway.py.before-0.9.0
+sudo install -m 755 gateway/routeva_gateway.py /opt/routeva-gateway/routeva_gateway.py
+sudo systemctl restart routeva-gateway
+sudo systemctl status routeva-gateway --no-pager
+```
+
+Do not replace `/etc/routeva-gateway/gateway.env`, `state.json`, provider caches,
+TLS files or the generated Mihomo config. Check `/v1/health` with your existing
+credentials; it must include `"capabilities": ["node-ping"]`. To roll back, restore
+the backed-up script and restart only `routeva-gateway`.
+
+### Authenticated ping API
+
+`POST /v1/nodes/ping` accepts `{"id":"<24-character node ID from /v1/status>"}`.
+It uses the same Basic Auth as the rest of the API. Clients cannot override the
+URL, port or controller path. Only nodes in `routeva_` providers can be tested.
+
+Mihomo's [proxy delay endpoint](https://wiki.metacubex.one/api/) performs the
+HTTPS URL-test through that specific outbound to the fixed
+`https://www.gstatic.com/generate_204` target (6-second test timeout, expected
+HTTP status 204). It does not
+call `/proxies/ROUTEVA` with PUT, write config/state or restart any service. At most
+four API tests run at once; excess requests return a safe `busy` result.
+
+Successful response: `id`, `method: "gateway-proxy"`, `vantage: "gateway"`, fixed
+`target`, `status: "ok"`, `delayMs`, `checkedAt`, `code: null`. Failures use
+`timeout`, `unavailable` or `error`, with `delayMs: null` and a safe diagnostic
+code. No subscription URL, secret or raw controller error is returned. The
+measurement is from the Gateway, **not from the browser's PC**.
