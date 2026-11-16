@@ -27,7 +27,7 @@ const COUNTRY_SERVICES = Object.freeze([
   Object.freeze({ url: "https://ipapi.co/json/", ip: "ip", country: "country_code" }),
   Object.freeze({ url: "https://ipinfo.io/json", ip: "ip", country: "country" })
 ]);
-const INTERNAL_PROXY_DOMAINS = Object.freeze(COUNTRY_SERVICES.map((service) => new URL(service.url).hostname));
+const INTERNAL_PROXY_DOMAINS = Object.freeze(["1.1.1.1", ...COUNTRY_SERVICES.map((service) => new URL(service.url).hostname)]);
 const VERSION_FEED_URL = "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/release.json";
 const DEFAULT_GATEWAY_API_PORT = 18445;
 
@@ -519,9 +519,20 @@ async function saveServer(serverInput) {
   const servers = existing
     ? state.servers.map((item) => (item.id === id ? server : item))
     : [...state.servers, server];
+  // A newly saved manual gateway must replace the previous account binding.
+  // Otherwise "Load from Gateway" can silently use an older user's login.
+  const isGatewayConnection = scheme === "https" && username && password;
+  const gateway = isGatewayConnection ? {
+    enabled: true,
+    apiUrl: `https://${host}:${DEFAULT_GATEWAY_API_PORT}`,
+    proxyServerId: id,
+    connected: false,
+    lastSyncAt: null
+  } : state.gateway;
   const next = await saveState({
     ...state,
     servers,
+    gateway,
     activeServerId: id,
     configured: true,
     enabled: true,
@@ -600,6 +611,24 @@ async function deleteServer(id) {
 
 async function fetchCountry(marker, offset = 0) {
   let lastError = null;
+  // The diagnostic HTTPS response proves proxy connectivity even if a separate
+  // GeoIP provider is blocked or rate-limited. Location is optional metadata.
+  try {
+    const response = await fetch(`https://1.1.1.1/cdn-cgi/trace?routeva=${encodeURIComponent(marker)}&ts=${Date.now()}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const fields = Object.fromEntries((await response.text()).split(/\r?\n/).filter((line) => line.includes("=")).map((line) => {
+      const at = line.indexOf("=");
+      return [line.slice(0, at), line.slice(at + 1)];
+    }));
+    if (!fields.ip || !/^[0-9a-fA-F:.]+$/.test(fields.ip)) throw new Error("неполный ответ");
+    const code = normalizeCountryCode(fields.loc);
+    return { ip: fields.ip, countryCode: code, countryName: code ? countryName(code) : "", flag: code ? countryFlag(code) : "" };
+  } catch (error) {
+    lastError = error;
+  }
   const orderedServices = COUNTRY_SERVICES.map((_, index) => COUNTRY_SERVICES[(index + offset) % COUNTRY_SERVICES.length]);
   for (const service of orderedServices) {
     try {
@@ -655,9 +684,6 @@ async function testProxy() {
   const server = resolveServerConnection(state, storedServer);
   if (!isServerConfigured(server)) throw new Error("Сначала сохраните данные подключения");
   try {
-    await chrome.proxy.settings.clear({ scope: "regular" });
-    const direct = await fetchCountry("direct");
-
     await chrome.proxy.settings.set({
       value: {
         mode: "fixed_servers",
@@ -674,7 +700,7 @@ async function testProxy() {
     const proxied = await fetchCountry("proxy");
     state = await saveServerLocation(state, storedServer.id, proxied);
     return {
-      directIp: direct.ip,
+      directIp: null,
       proxyIp: proxied.ip,
       countryCode: proxied.countryCode,
       countryName: proxied.countryName,
@@ -737,6 +763,13 @@ async function gatewayRequest(state, path, { method = "GET", body = null, gatewa
     || getGatewayProxyServer(state);
   if (!proxyServer?.username || !proxyServer?.password) {
     throw new Error("Для Routeva Gateway нужны логин и пароль основного сервера");
+  }
+  // The API belongs to the same gateway as the HTTPS proxy. A saved API URL
+  // must follow a changed proxy host after a server/DNS migration.
+  if (controller.proxyServerId === proxyServer.id) {
+    const apiUrl = new URL(controller.apiUrl);
+    apiUrl.hostname = proxyServer.host;
+    controller.apiUrl = apiUrl.href.replace(/\/$/, "");
   }
   const response = await fetch(`${controller.apiUrl}${path}`, {
     method,

@@ -15,6 +15,7 @@ import json
 import os
 import re
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -38,6 +39,9 @@ API_PASSWORD = os.environ.get("ROUTEVA_API_PASSWORD", "")
 LISTEN_HOST = os.environ.get("ROUTEVA_LISTEN_HOST", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("ROUTEVA_LISTEN_PORT", "18446"))
 MIHOMO_SERVICE = os.environ.get("ROUTEVA_MIHOMO_SERVICE", "routeva-mihomo.service")
+TLS_CERT = os.environ.get("ROUTEVA_TLS_CERT", "")
+TLS_KEY = os.environ.get("ROUTEVA_TLS_KEY", "")
+ACCOUNTS_PATH = DATA_DIR / "accounts.json"
 MAX_BODY = 64 * 1024
 STATE_LOCK = threading.RLock()
 PING_SLOTS = threading.BoundedSemaphore(4)
@@ -58,6 +62,39 @@ def utc_now() -> str:
 def yaml_string(value: str) -> str:
     # JSON strings are valid YAML scalars and correctly escape subscription URLs.
     return json.dumps(str(value), ensure_ascii=False)
+
+
+def accounts() -> dict[str, dict[str, Any]]:
+    result = {"owner": {"id": "owner", "username": API_USERNAME, "password": API_PASSWORD,
+                        "group": "ROUTEVA", "proxy_port": 18443, "role": "owner"}}
+    if ACCOUNTS_PATH.exists():
+        data = json.loads(ACCOUNTS_PATH.read_text(encoding="utf-8"))
+        for item in data.get("users", []):
+            account_id = item.get("id", "")
+            username = item.get("username", "")
+            port = item.get("proxy_port")
+            if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", account_id) or account_id in result:
+                raise ValueError("Invalid Routeva account ID")
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", username) or not item.get("password"):
+                raise ValueError("Invalid Routeva account credentials")
+            if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
+                raise ValueError("Invalid Routeva account port")
+            if any(a["username"] == username or a["proxy_port"] == port for a in result.values()):
+                raise ValueError("Duplicate Routeva account credentials or port")
+            result[account_id] = {**item, "group": "ROUTEVA_" + account_id.upper(), "role": "member"}
+    return result
+
+
+def account(account_id: str = "owner") -> dict[str, Any]:
+    value = accounts().get(account_id)
+    if value is None:
+        raise PermissionError("Unknown Routeva account")
+    return value
+
+
+def saved_selection(state: dict[str, Any], account_id: str = "owner") -> str:
+    return str(state.get("selected", "DIRECT") if account_id == "owner"
+               else state.get("selections", {}).get(account_id, "DIRECT"))
 
 
 def default_state() -> dict[str, Any]:
@@ -125,11 +162,22 @@ def render_mihomo_config(state: dict[str, Any]) -> str:
         "ipv6: true",
         "external-controller: 127.0.0.1:18448",
         f"secret: {yaml_string(MIHOMO_SECRET)}",
-        "profile:",
-        "  store-selected: true",
-        "  store-fake-ip: false",
-        "proxy-providers:",
+        "listeners:",
     ]
+    for identity in accounts().values():
+        lines.extend([
+            f"  - name: routeva-{identity['id']}",
+            "    type: http",
+            "    listen: 0.0.0.0",
+            f"    port: {identity['proxy_port']}",
+            f"    proxy: {yaml_string(identity['group'])}",
+            f"    certificate: {yaml_string(TLS_CERT)}",
+            f"    private-key: {yaml_string(TLS_KEY)}",
+            "    users:",
+            f"      - username: {yaml_string(identity['username'])}",
+            f"        password: {yaml_string(identity['password'])}",
+        ])
+    lines.extend(["profile:", "  store-selected: true", "  store-fake-ip: false", "proxy-providers:"])
     if not subscriptions:
         lines.append("  {}")
     for subscription in subscriptions:
@@ -150,16 +198,18 @@ def render_mihomo_config(state: dict[str, Any]) -> str:
             "      url: https://www.gstatic.com/generate_204",
             "      interval: 600",
         ])
-    lines.extend([
-        "proxy-groups:",
-        "  - name: ROUTEVA",
-        "    type: select",
-        "    proxies:",
-        "      - DIRECT",
-    ])
-    if subscriptions:
-        lines.append("    use:")
-        lines.extend(f"      - {provider_id(item['id'])}" for item in subscriptions)
+    lines.append("proxy-groups:")
+    for account_id, identity in accounts().items():
+        lines.extend([
+            f"  - name: {yaml_string(identity['group'])}",
+            "    type: select",
+            f"    default-selected: {yaml_string(saved_selection(state, account_id))}",
+            "    proxies:",
+            "      - DIRECT",
+        ])
+        if subscriptions:
+            lines.append("    use:")
+            lines.extend(f"      - {provider_id(item['id'])}" for item in subscriptions)
     lines.extend([
         "rules:",
         "  - MATCH,ROUTEVA",
@@ -198,14 +248,8 @@ def mihomo_request(path: str, method: str = "GET", payload: Any = None, timeout:
 
 
 def restart_mihomo() -> None:
-    subprocess.run(
-        ["systemctl", "restart", MIHOMO_SERVICE],
-        check=True,
-        timeout=20,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    # Reload through the authenticated loopback API; no root access is needed.
+    mihomo_request("/configs?force=true", method="PUT", payload={"path": str(MIHOMO_CONFIG)}, timeout=20)
     deadline = time.monotonic() + 20
     last_error: Exception | None = None
     while time.monotonic() < deadline:
@@ -253,15 +297,16 @@ def wait_for_provider(provider: str, timeout: float = 30) -> list[dict[str, Any]
     raise RuntimeError("Провайдер не вернул ни одного поддерживаемого узла")
 
 
-def current_selection() -> str:
+def current_selection(account_id: str = "owner") -> str:
+    group = account(account_id)["group"]
     try:
-        data = mihomo_request("/proxies/ROUTEVA") or {}
+        data = mihomo_request("/proxies/" + urllib.parse.quote(group, safe="")) or {}
         return str(data.get("now") or "DIRECT")
     except Exception:
-        return str(load_state().get("selected") or "DIRECT")
+        return saved_selection(load_state(), account_id)
 
 
-def build_public_status(wait_provider_id: str | None = None) -> dict[str, Any]:
+def build_public_status(wait_provider_id: str | None = None, account_id: str = "owner") -> dict[str, Any]:
     state = load_state()
     if wait_provider_id:
         wait_for_provider(wait_provider_id)
@@ -283,10 +328,11 @@ def build_public_status(wait_provider_id: str | None = None) -> dict[str, Any]:
         }
         subscriptions.append(public)
         all_nodes.extend({**node, "subscriptionId": item["id"]} for node in nodes)
-    selected = current_selection()
+    selected = current_selection(account_id)
     return {
         "version": 1,
-        "capabilities": ["node-ping"],
+        "capabilities": ["node-ping", "independent-selection"],
+        "account": {"id": account_id, "role": account(account_id)["role"]},
         "ready": True,
         "selected": selected,
         "subscriptions": subscriptions,
@@ -339,6 +385,7 @@ def delete_subscription(subscription_id: str) -> dict[str, Any]:
         state["subscriptions"] = subscriptions
         if not subscriptions:
             state["selected"] = "DIRECT"
+            state["selections"] = {key: "DIRECT" for key in state.get("selections", {})}
         save_state(state)
         write_mihomo_config(state)
         restart_mihomo()
@@ -357,7 +404,8 @@ def refresh_subscription(subscription_id: str) -> dict[str, Any]:
     return build_public_status(provider)
 
 
-def select_node(name: str) -> dict[str, Any]:
+def select_node(name: str, account_id: str = "owner") -> dict[str, Any]:
+    identity = account(account_id)
     value = str(name or "").strip()
     status = build_public_status()
     allowed = {"DIRECT", *(node["key"] for node in status["nodes"])}
@@ -368,10 +416,14 @@ def select_node(name: str) -> dict[str, Any]:
         if not matches:
             raise ValueError("Узел не найден")
         value = matches[0]
-    mihomo_request("/proxies/ROUTEVA", method="PUT", payload={"name": value})
-    state = load_state()
-    state["selected"] = value
-    save_state(state)
+    with STATE_LOCK:
+        mihomo_request("/proxies/" + urllib.parse.quote(identity["group"], safe=""), method="PUT", payload={"name": value})
+        state = load_state()
+        if account_id == "owner":
+            state["selected"] = value
+        else:
+            state.setdefault("selections", {})[account_id] = value
+        save_state(state)
     # Keep switching constant-size. Returning every provider node here made
     # the browser download and rewrite hundreds of records after every click.
     return {
@@ -425,11 +477,18 @@ def ping_node(node_id: Any) -> dict[str, Any]:
 class GatewayHandler(BaseHTTPRequestHandler):
     server_version = "RoutevaGateway/1"
 
+    def setup(self) -> None:
+        self.request.settimeout(20)
+        super().setup()
+
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}", flush=True)
 
     def cors_headers(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        if re.fullmatch(r"chrome-extension://[a-p]{32}", origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Cache-Control", "no-store")
@@ -445,10 +504,17 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def authorized(self) -> bool:
-        if not API_USERNAME or not API_PASSWORD:
-            return False
-        expected = "Basic " + base64.b64encode(f"{API_USERNAME}:{API_PASSWORD}".encode()).decode()
-        return hmac.compare_digest(self.headers.get("Authorization", ""), expected)
+        self.account_id = None
+        supplied = self.headers.get("Authorization", "").encode("utf-8")
+        matched = None
+        for account_id, identity in accounts().items():
+            if not identity["username"] or not identity["password"]:
+                continue
+            expected = b"Basic " + base64.b64encode(f"{identity['username']}:{identity['password']}".encode())
+            if hmac.compare_digest(supplied, expected):
+                matched = account_id
+        self.account_id = matched
+        return matched is not None
 
     def require_auth(self) -> bool:
         if self.authorized():
@@ -471,13 +537,15 @@ class GatewayHandler(BaseHTTPRequestHandler):
     def dispatch(self, method: str) -> Any:
         path = urllib.parse.urlsplit(self.path).path.rstrip("/") or "/"
         if method == "GET" and path == "/v1/health":
-            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.1", "capabilities": ["node-ping"]}
+            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.1", "capabilities": ["node-ping", "independent-selection"]}
         if method == "GET" and path == "/v1/status":
-            return build_public_status()
+            return build_public_status(account_id=self.account_id)
+        if path.startswith("/v1/subscriptions") and method != "GET" and self.account_id != "owner":
+            raise PermissionError("Подписками управляет владелец Gateway; вы можете выбирать и проверять серверы")
         if method == "POST" and path == "/v1/subscriptions":
             return add_subscription(self.read_json())
         if method == "PUT" and path == "/v1/nodes/select":
-            return select_node(self.read_json().get("name"))
+            return select_node(self.read_json().get("name"), account_id=self.account_id)
         if method == "POST" and path == "/v1/nodes/ping":
             return ping_node(self.read_json().get("id"))
         parts = path.split("/")
@@ -498,6 +566,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             self.send_json(200, self.dispatch(method))
         except FileNotFoundError as error:
             self.send_json(404, {"error": str(error)})
+        except PermissionError as error:
+            self.send_json(403, {"error": str(error)})
         except (ValueError, json.JSONDecodeError) as error:
             self.send_json(400, {"error": str(error)})
         except Exception as error:
@@ -521,12 +591,52 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.handle_method("DELETE")
 
 
+class GatewayHTTPServer(ThreadingHTTPServer):
+    """Keep incomplete TLS handshakes out of the shared accept loop."""
+
+    request_queue_size = 64
+    daemon_threads = True
+
+    def __init__(self, address, handler, *, tls_context=None):
+        self.tls_context = tls_context
+        self.worker_slots = threading.BoundedSemaphore(64)
+        super().__init__(address, handler)
+
+    def process_request(self, request, client_address):
+        if not self.worker_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.worker_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            request.settimeout(5)
+            if self.tls_context is not None:
+                request = self.tls_context.wrap_socket(request, server_side=True)
+            super().process_request_thread(request, client_address)
+        except (OSError, ssl.SSLError):
+            self.shutdown_request(request)
+        finally:
+            self.worker_slots.release()
+
+
 def main() -> None:
     if not API_USERNAME or not API_PASSWORD or not MIHOMO_SECRET:
         raise SystemExit("ROUTEVA_API_USERNAME, ROUTEVA_API_PASSWORD and ROUTEVA_MIHOMO_SECRET are required")
     state = load_state()
     write_mihomo_config(state)
-    server = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), GatewayHandler)
+    context = None
+    if TLS_CERT and TLS_KEY:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(TLS_CERT, TLS_KEY)
+    elif LISTEN_HOST not in {"127.0.0.1", "::1"}:
+        raise SystemExit("Public Routeva API requires TLS")
+    server = GatewayHTTPServer((LISTEN_HOST, LISTEN_PORT), GatewayHandler, tls_context=context)
     print(f"Routeva Gateway listening on {LISTEN_HOST}:{LISTEN_PORT}", flush=True)
     server.serve_forever()
 

@@ -441,7 +441,7 @@ $("#connectionForm").addEventListener("submit", async (event) => {
     });
     const test = await send("testProxy");
     result.className = "test-result success";
-    result.textContent = `Готово: ${test.directIp} → ${test.proxyIp} · ${test.flag || "🌐"} ${test.countryName || ""}`;
+    result.textContent = `Подключение работает · IP ${test.proxyIp}${test.countryName ? ` · ${test.flag || "🌐"} ${test.countryName}` : ""}`;
     toast("Подключение работает");
     await refresh();
   } catch (error) {
