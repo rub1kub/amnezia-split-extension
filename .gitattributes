@@ -1,0 +1,2 @@
+# Preserve upstream license documents byte-for-byte, including whitespace.
+data/licenses/* -text -whitespace

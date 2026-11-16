@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Routeva — VPN и прокси",
   "short_name": "Routeva",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Направляет выбранные сайты или весь интернет через ваш Routeva Gateway и переключает узлы подписок.",
   "homepage_url": "https://github.com/rub1kub/amnezia-split-extension",
   "minimum_chrome_version": "109",
@@ -14,15 +14,22 @@
     "webRequest",
     "webRequestAuthProvider"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/update-banner.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/update-banner.js"
+      ],
       "run_at": "document_idle"
     }
   ],

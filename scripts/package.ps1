@@ -23,7 +23,7 @@ if (Test-Path $stageFull) { Remove-Item -LiteralPath $stageFull -Recurse -Force 
 if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
 
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
-$items = if ($Gateway) { @("LICENSE") } else { @("manifest.json", "assets", "data", "lib", "src") }
+$items = if ($Gateway) { @("LICENSE", "data") } else { @("LICENSE", "manifest.json", "assets", "data", "lib", "src") }
 foreach ($item in $items) {
   Copy-Item -LiteralPath (Join-Path $root $item) -Destination $stage -Recurse
 }
@@ -31,8 +31,8 @@ if ($Gateway) {
   # Package only source/docs/service units, never generated secrets or Python caches.
   $gatewayStage = Join-Path $stage "gateway"
   New-Item -ItemType Directory -Force -Path $gatewayStage | Out-Null
-  foreach ($name in @("routeva_gateway.py", "test_gateway.py", "README.md", "routeva-gateway.service", "routeva-mihomo.service")) {
-    Copy-Item -LiteralPath (Join-Path (Join-Path $root "gateway") $name) -Destination $gatewayStage
+  foreach ($name in @("routeva_gateway.py", "test_gateway.py", "test_routeva_accounts.py", "test_routeva_tls.py", "test_routing.py", "requirements-test.txt", "routing", "README.md", "routeva-gateway.service", "routeva-mihomo.service")) {
+    Copy-Item -LiteralPath (Join-Path (Join-Path $root "gateway") $name) -Destination $gatewayStage -Recurse
   }
 }
 

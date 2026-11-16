@@ -566,8 +566,8 @@ $("#optionsCommunityToggle").addEventListener("click", async () => {
 $("#refreshRussianDirect").addEventListener("click", async () => {
   const button = $("#refreshRussianDirect");
   button.disabled = true;
-  try { render(await send("refreshRussianDirect")); toast("Правила прямого доступа обновлены"); }
-  catch (error) { toast(error.message); }
+  try { await send("refreshRussianDirect"); await refresh(); toast("Правила прямого доступа обновлены"); }
+  catch (error) { toast(error.message, "error"); }
   finally { button.disabled = false; }
 });
 

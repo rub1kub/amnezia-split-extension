@@ -537,7 +537,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
     def dispatch(self, method: str) -> Any:
         path = urllib.parse.urlsplit(self.path).path.rstrip("/") or "/"
         if method == "GET" and path == "/v1/health":
-            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.1", "capabilities": ["node-ping", "independent-selection"]}
+            return {"ready": True, "service": "routeva-gateway", "version": 1, "appVersion": "0.9.2", "capabilities": ["node-ping", "independent-selection"]}
         if method == "GET" and path == "/v1/status":
             return build_public_status(account_id=self.account_id)
         if path.startswith("/v1/subscriptions") and method != "GET" and self.account_id != "owner":
