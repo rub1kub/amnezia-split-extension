@@ -6,6 +6,7 @@ import * as rules from "../lib/rules.js";
 import * as proxy from "../lib/proxy.js";
 import * as version from "../lib/version.js";
 import * as latency from "../lib/latency.js";
+import * as ruPolicy from "../lib/ru-policy.js";
 
 const code = (await readFile(new URL("../src/background.js", import.meta.url), "utf8"))
   .replace(/import\s+[\s\S]*?from\s+"[^"\n]+";/g, "")
@@ -34,7 +35,7 @@ function harness(fetchImpl, saved = {}, allowProxy = false) {
     } },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} }
   };
-  const context = vm.createContext({ ...rules, ...proxy, ...version, ...latency, chrome, fetch: fetchImpl, URL, AbortSignal, Date, console, btoa, TextEncoder });
+  const context = vm.createContext({ ...rules, ...proxy, ...version, ...latency, ...ruPolicy, chrome, fetch: fetchImpl, URL, AbortSignal, Date, console, btoa, TextEncoder });
   vm.runInContext(code, context);
   return { store, writes, run: (expression) => vm.runInContext(expression, context) };
 }

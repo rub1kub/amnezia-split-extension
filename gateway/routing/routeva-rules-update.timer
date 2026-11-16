@@ -1,0 +1,10 @@
+[Unit]
+Description=Update shared routing data every day
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 Europe/Moscow
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

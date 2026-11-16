@@ -6,7 +6,7 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import test from 'node:test';
 
 const root=fileURLToPath(new URL('../',import.meta.url)).replace(/[\\/]$/,'');
-const libraries=Object.assign({}, ...await Promise.all(['rules','proxy','latency','version'].map(async name=>await import(pathToFileURL(`${root}/lib/${name}.js`).href))));
+const libraries=Object.assign({}, ...await Promise.all(['rules','proxy','latency','version','ru-policy'].map(async name=>await import(pathToFileURL(`${root}/lib/${name}.js`).href))));
 let source=await fs.readFile(`${root}/src/background.js`,'utf8');
 source=source.replace(/^import\s+\{[\s\S]*?\}\s+from\s+["'][^"']+["'];?\s*/gm,'');
 source=source.slice(0,source.lastIndexOf('\ninitialize().catch('));

@@ -1,0 +1,10 @@
+# Include inside the HTTPS VirtualHost, BEFORE a catch-all WSGIScriptAlias /.
+Alias /routing/ /var/lib/routeva-rules/current/
+<Directory /var/lib/routeva-rules/current/>
+    Options -Indexes +FollowSymLinks
+    AllowOverride None
+    Require all granted
+    Header set Cache-Control "public, max-age=300"
+    Header set Access-Control-Allow-Origin "*"
+    Header set X-Content-Type-Options "nosniff"
+</Directory>

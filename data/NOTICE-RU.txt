@@ -1,0 +1,14 @@
+The independently implemented Routeva routing code is MIT licensed.
+
+data/ru-direct.json aggregates country ranges and a transformed domain list.
+Domain-list snapshot: MetaCubeX/meta-rules-dat, category-ru (GPL-3.0 project),
+derived from v2fly/domain-list-community (MIT).
+The input domain snapshot is supplied as data/source-category-ru.yaml.
+Source URLs and the data timestamp are recorded in data/ru-direct.json.
+Copies of both licenses are supplied in data/licenses/.
+
+Country IP ranges are provided by IPdeny:
+https://www.ipdeny.com/ipblocks/
+Powered by IPDENY.COM IP database.
+The required unchanged copyright notice is in data/licenses/IPdeny-Copyrights.txt.
+Country assignment does not guarantee the current physical location of an IP.

@@ -18,6 +18,30 @@ proxy credentials into Git.
 
 ## Reference installation
 
+Version 0.9.2 adds [server-managed Russian-service bypass data](routing/README.md)
+and independent account selections. The routing publisher is optional and separate
+from VPN credentials. Its files can also be imported into AmneziaVPN, whose stock
+clients do not yet auto-refresh routing lists by URL.
+
+For a second Gateway account, create `/etc/routeva-gateway/accounts.json` readable
+only by root and the Gateway service:
+
+```json
+{"users":[{"id":"friend","username":"friend-login","password":"replace-with-a-unique-long-secret","proxy_port":18453}]}
+```
+
+The owner keeps its existing login and proxy port. A member can list, select and
+ping nodes but cannot change shared subscriptions. The API derives account scope
+from authentication, not a supplied account ID. TLS listener credentials and
+selected groups are separate per user; node/provider data remain shared.
+
+Public per-account HTTPS listeners require `ROUTEVA_TLS_CERT` and
+`ROUTEVA_TLS_KEY` pointing to readable certificate/key files. Keep the certificate
+renewal hook in place. Adding listeners requires applying the generated Mihomo
+configuration and, if listeners were renamed, restarting Mihomo. Existing clients
+should keep their connection settings. Run the account/TLS regression tests before
+upgrading a custom deployment.
+
 Prerequisites: Linux with systemd, Python 3.10+, an authenticated HTTPS
 forward proxy on public port `18443`, stunnel (or another TLS terminator), and
 the official Mihomo binary installed as `/usr/local/bin/routeva-mihomo`.

@@ -10,6 +10,7 @@ import {
 } from "../lib/rules.js";
 import { compareVersions, releaseUrl } from "../lib/version.js";
 import { normalizeLatency } from "../lib/latency.js";
+import { ruPolicyUrlForHost, validateRuPolicy } from "../lib/ru-policy.js";
 import {
   countryFlag,
   countryName,
@@ -58,6 +59,9 @@ const DEFAULT_STATE = Object.freeze({
   communityUpdatedAt: null,
   customDomains: [],
   bypassDomains: [],
+  ruPolicy: null,
+  ruPolicyCheckedAt: null,
+  ruPolicyError: null,
   activeServerId: DEFAULT_SERVER.id,
   servers: [DEFAULT_SERVER],
   subscriptions: [],
@@ -73,6 +77,7 @@ const proxyAuthAttempts = new Map();
 const pingFlights = new Map();
 let latencyCachePromise;
 let latencySaveQueue = Promise.resolve();
+let ruPolicyFlight;
 
 async function latencyCache() {
   latencyCachePromise ||= chrome.storage.local.get("serverLatencies")
@@ -262,6 +267,10 @@ async function loadBundledDomains() {
 
 async function initialize() {
   let state = await getState();
+  if (!state.ruPolicy) {
+    const response = await fetch(chrome.runtime.getURL("data/ru-direct.json"));
+    if (response.ok) state = await saveState({ ...state, ruPolicy: validateRuPolicy(await response.json()) });
+  }
   if (state.communityDomains.length === 0) {
     const communityDomains = await loadBundledDomains();
     state = await saveState({
@@ -293,7 +302,9 @@ async function initialize() {
   await chrome.alarms.create("refresh-community-list", { periodInMinutes: 24 * 60 });
   await chrome.alarms.create("check-extension-update", { periodInMinutes: 6 * 60 });
   await chrome.alarms.create("sync-routeva-gateway", { periodInMinutes: 60 });
+  await chrome.alarms.create("refresh-ru-direct-policy", { periodInMinutes: 6 * 60 });
   await applyProxy(state);
+  refreshRuPolicy().catch(() => {});
   const updatedAt = state.communityUpdatedAt ? new Date(state.communityUpdatedAt).getTime() : 0;
   const needsSources = state.communitySources.length < DOMAIN_SOURCES.length;
   if (needsSources || Date.now() - updatedAt > 24 * 60 * 60 * 1000) {
@@ -338,7 +349,8 @@ async function applyProxy(providedState) {
     proxyPort: server.port,
     proxyScheme: server.scheme,
     routeMode: state.routeMode,
-    configRevision: state.proxyRevision
+    configRevision: state.proxyRevision,
+    ruPolicy: state.ruPolicy
   });
 
   await chrome.proxy.settings.set({
@@ -349,6 +361,41 @@ async function applyProxy(providedState) {
     scope: "regular"
   });
   await setBadge(state);
+}
+
+async function refreshRuPolicy() {
+  if (ruPolicyFlight) return ruPolicyFlight;
+  ruPolicyFlight = (async () => {
+    try {
+      const before = await getState();
+      if (!isStateServerConfigured(before)) return getPublicStatus(null, before);
+      const url = ruPolicyUrlForHost(resolveServerConnection(before).host);
+      const response = await fetch(url, { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(12000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text = await response.text();
+      if (text.length > 2000000) throw new Error("Слишком большой список обхода");
+      const policy = validateRuPolicy(JSON.parse(text));
+      const current = await getState();
+      if (ruPolicyUrlForHost(resolveServerConnection(current).host) !== url) return getPublicStatus(null, current);
+      const changed = current.ruPolicy?.id !== policy.id;
+      const next = await saveState({ ...current, ruPolicy: policy, ruPolicyCheckedAt: new Date().toISOString(), ruPolicyError: null,
+        proxyRevision: current.proxyRevision + (changed ? 1 : 0) });
+      if (changed) {
+        try { await applyProxy(); }
+        catch (error) {
+          const latest = await getState();
+          await saveState({ ...latest, ruPolicy: current.ruPolicy, ruPolicyCheckedAt: current.ruPolicyCheckedAt });
+          throw error;
+        }
+      }
+      return getPublicStatus(null, await getState());
+    } catch (error) {
+      const current = await getState();
+      await saveState({ ...current, ruPolicyError: String(error.message || error).slice(0,200) });
+      throw error;
+    }
+  })().finally(() => { ruPolicyFlight = null; });
+  return ruPolicyFlight;
 }
 
 async function updateCommunityList() {
@@ -1019,6 +1066,12 @@ function getPublicStatus(host, state, includeCredentials = false, includeDomains
     communityUpdatedAt: state.communityUpdatedAt,
     customDomains: state.customDomains,
     bypassDomains: state.bypassDomains,
+    russianDirect: {
+      enabled: true, source: ruPolicyUrlForHost(resolveServerConnection(state).host), updatedAt: state.ruPolicy?.generatedAt || null,
+      checkedAt: state.ruPolicyCheckedAt, lastError: state.ruPolicyError,
+      domainCount: (state.ruPolicy?.domainSuffixes.length || 0) + (state.ruPolicy?.exactDomains.length || 0),
+      rangeCount: state.ruPolicy?.ipv4Ranges.length || 0
+    },
     activeCount: domains.length,
     domainEntries: includeDomains
       ? domains.map((domain) => ({ domain, source: routeSource(domain, { ...state, routeMode: "selected" }) }))
@@ -1086,6 +1139,8 @@ async function handleMessage(message) {
     }
     case "updateCommunityList":
       return updateCommunityList();
+    case "refreshRussianDirect":
+      return refreshRuPolicy();
     case "saveProxy":
       return saveServer({ ...(message.proxy ?? {}), id: state.activeServerId });
     case "saveServer":
@@ -1207,6 +1262,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "refresh-community-list") updateCommunityList().catch(() => {});
   if (alarm.name === "check-extension-update") checkForExtensionUpdate().catch(() => {});
   if (alarm.name === "sync-routeva-gateway") syncRoutevaGateway().catch(() => {});
+  if (alarm.name === "refresh-ru-direct-policy") refreshRuPolicy().catch(() => {});
 });
 
 initialize().catch(async (error) => {

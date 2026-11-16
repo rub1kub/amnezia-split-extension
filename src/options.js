@@ -355,6 +355,11 @@ function render(next) {
     next = { ...next, domainEntries: status?.domainEntries ?? [] };
   }
   status = next;
+  const ru = next.russianDirect;
+  if (ru) {
+    const date = ru.updatedAt ? new Date(ru.updatedAt).toLocaleDateString("ru-RU") : "встроенные правила";
+    $("#ruDirectMeta").textContent = `MAX, банки и российские сайты · ${ru.domainCount} доменов и ${ru.rangeCount} IP-диапазонов · ${date}${ru.lastError ? " · обновление недоступно, сохранены прежние правила" : " · автообновление каждые 6 часов"}`;
+  }
   renderServerEditor(next);
   document.querySelectorAll(".options-route-mode .route-mode-button").forEach((button) => {
     const selected = button.dataset.routeMode === next.routeMode;
@@ -556,6 +561,14 @@ $("#optionsCommunityToggle").addEventListener("click", async () => {
   } catch (error) {
     toast(error.message, "error");
   }
+});
+
+$("#refreshRussianDirect").addEventListener("click", async () => {
+  const button = $("#refreshRussianDirect");
+  button.disabled = true;
+  try { render(await send("refreshRussianDirect")); toast("Правила прямого доступа обновлены"); }
+  catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
 });
 
 $("#refreshList").addEventListener("click", async () => {
