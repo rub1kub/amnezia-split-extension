@@ -7,6 +7,8 @@ VLESS, Hysteria2, Shadowsocks, Trojan or other outbound.
 
 Public ports used by the reference deployment:
 
+- `443/tcp`, `/routeva-api/` — preferred control endpoint for Routeva 0.9.3;
+
 - `18443/tcp` — existing HTTPS forward proxy used by Brave;
 - `18445/tcp` — TLS control API, forwarded to `127.0.0.1:18446`;
 - `18447/tcp` — dedicated Mihomo mixed proxy, loopback only;
@@ -17,6 +19,17 @@ server. Never copy `gateway.env`, `state.json`, generated provider files or
 proxy credentials into Git.
 
 ## Reference installation
+
+For standard HTTPS control, include [apache-api443.conf.example](apache-api443.conf.example)
+in the proxy hostname's HTTPS VirtualHost and replace the backend hostname with
+the name covered by its certificate. Exempt `/routeva-api/` from canonical-host
+redirects so POST bodies and authorization are preserved. Validate the Apache
+configuration before reloading. The original API on 18445 stays available.
+
+The extension automatically discovers 443 for read-only status/ping requests and
+remembers a working legacy endpoint when needed. A failed selection or subscription
+mutation is not retried. Keep the original endpoint configured until discovery
+has completed. Custom API paths/ports are preserved.
 
 Version 0.9.2 adds [server-managed Russian-service bypass data](routing/README.md)
 and independent account selections. The routing publisher is optional and separate

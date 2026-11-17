@@ -31,7 +31,7 @@ if ($Gateway) {
   # Package only source/docs/service units, never generated secrets or Python caches.
   $gatewayStage = Join-Path $stage "gateway"
   New-Item -ItemType Directory -Force -Path $gatewayStage | Out-Null
-  foreach ($name in @("routeva_gateway.py", "test_gateway.py", "test_routeva_accounts.py", "test_routeva_tls.py", "test_routing.py", "requirements-test.txt", "routing", "README.md", "routeva-gateway.service", "routeva-mihomo.service")) {
+  foreach ($name in @("routeva_gateway.py", "test_gateway.py", "test_routeva_accounts.py", "test_routeva_tls.py", "test_routing.py", "requirements-test.txt", "routing", "apache-api443.conf.example", "README.md", "routeva-gateway.service", "routeva-mihomo.service")) {
     Copy-Item -LiteralPath (Join-Path (Join-Path $root "gateway") $name) -Destination $gatewayStage -Recurse
   }
 }

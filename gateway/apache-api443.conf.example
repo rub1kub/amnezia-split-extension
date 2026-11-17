@@ -1,0 +1,16 @@
+# Include in the HTTPS VirtualHost for the proxy/API hostname.
+# Replace gateway.example with the hostname on the backend's certificate.
+# Keep this path out of any www -> apex redirects: POST must not become GET.
+ProxyRequests Off
+SSLProxyEngine On
+SSLProxyVerify require
+SSLProxyVerifyDepth 5
+SSLProxyCheckPeerName On
+SSLProxyCheckPeerExpire On
+SSLProxyCACertificateFile /etc/ssl/certs/ca-certificates.crt
+ProxyPass /routeva-api/ https://gateway.example:18445/ connectiontimeout=3 timeout=75 retry=0
+ProxyPassReverse /routeva-api/ https://gateway.example:18445/
+<Location /routeva-api/>
+    Header always set Cache-Control "no-store"
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive"
+</Location>

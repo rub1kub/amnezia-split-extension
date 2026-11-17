@@ -31,6 +31,7 @@ const COUNTRY_SERVICES = Object.freeze([
 const INTERNAL_PROXY_DOMAINS = Object.freeze(["1.1.1.1", ...COUNTRY_SERVICES.map((service) => new URL(service.url).hostname)]);
 const VERSION_FEED_URL = "https://raw.githubusercontent.com/rub1kub/amnezia-split-extension/main/release.json";
 const DEFAULT_GATEWAY_API_PORT = 18445;
+const GATEWAY_API_PATH = "/routeva-api";
 
 const DEFAULT_SERVER = Object.freeze({
   id: "server-1",
@@ -78,6 +79,7 @@ const pingFlights = new Map();
 let latencyCachePromise;
 let latencySaveQueue = Promise.resolve();
 let ruPolicyFlight;
+const gatewayEndpointCache = new Map();
 
 async function latencyCache() {
   latencyCachePromise ||= chrome.storage.local.get("serverLatencies")
@@ -342,9 +344,13 @@ async function applyProxy(providedState) {
   }
 
   const domains = [...new Set([...effectiveDomains(state), ...INTERNAL_PROXY_DOMAINS])];
+  const managementDomains = [server.host];
+  if (state.gateway?.apiUrl) {
+    try { managementDomains.push(new URL(state.gateway.apiUrl).hostname); } catch {}
+  }
   const pac = generatePac({
     domains,
-    bypassDomains: state.bypassDomains,
+    bypassDomains: [...new Set([...state.bypassDomains, ...managementDomains])],
     proxyHost: server.host,
     proxyPort: server.port,
     proxyScheme: server.scheme,
@@ -804,6 +810,21 @@ function basicAuthorization(username, password) {
   return `Basic ${btoa(binary)}`;
 }
 
+function gatewayCandidates(apiUrl, readOnly) {
+  if (!readOnly) return [apiUrl];
+  const url = new URL(apiUrl);
+  if (url.search || url.hash) return [apiUrl];
+  if (url.port === String(DEFAULT_GATEWAY_API_PORT) && url.pathname === "/") {
+    const primary = new URL(url); primary.port = ""; primary.pathname = GATEWAY_API_PATH;
+    return [primary.href.replace(/\/$/, ""), apiUrl];
+  }
+  if ((!url.port || url.port === "443") && url.pathname.replace(/\/$/, "") === GATEWAY_API_PATH) {
+    const legacy = new URL(url); legacy.port = String(DEFAULT_GATEWAY_API_PORT); legacy.pathname = "/";
+    return [apiUrl, legacy.href.replace(/\/$/, "")];
+  }
+  return [apiUrl];
+}
+
 async function gatewayRequest(state, path, { method = "GET", body = null, gateway = null } = {}) {
   const controller = normalizeGateway(gateway || state.gateway) || inferredGateway(state);
   const proxyServer = state.servers.find((server) => server.id === controller.proxyServerId)
@@ -818,21 +839,49 @@ async function gatewayRequest(state, path, { method = "GET", body = null, gatewa
     apiUrl.hostname = proxyServer.host;
     controller.apiUrl = apiUrl.href.replace(/\/$/, "");
   }
-  const response = await fetch(`${controller.apiUrl}${path}`, {
+  // Read-only control requests can discover the website's HTTPS endpoint safely.
+  // Never replay a subscription/selection mutation after an ambiguous failure.
+  const readOnly = method === "GET" || path === "/v1/nodes/ping";
+  const cacheKey = JSON.stringify([controller.apiUrl, proxyServer.username]);
+  const cached = gatewayEndpointCache.get(cacheKey);
+  let candidates = gatewayCandidates(controller.apiUrl, readOnly);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) {
+    candidates = [cached.base, ...candidates.filter((base) => base !== cached.base)];
+    if (!readOnly) candidates = [cached.base];
+  }
+  const options = {
     method,
     cache: "no-store",
+    redirect: "error",
     headers: {
       Authorization: basicAuthorization(proxyServer.username, proxyServer.password),
       ...(body ? { "Content-Type": "application/json" } : {})
     },
-    body: body ? JSON.stringify(body) : null,
-    signal: AbortSignal.timeout(path === "/v1/nodes/ping" ? 15000 : method === "POST" ? 65000 : 30000)
-  });
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    // The error below remains understandable if a reverse proxy returned HTML.
+    body: body ? JSON.stringify(body) : null
+  };
+  let response, payload, validPayload;
+  for (let index = 0; index < candidates.length; index++) {
+    const base = candidates[index];
+    try {
+      response = await fetch(`${base}${path}`, { ...options,
+        signal: AbortSignal.timeout(path === "/v1/nodes/ping" ? 15000 : method === "POST" ? 65000 : 30000) });
+    } catch (error) {
+      if (readOnly && index + 1 < candidates.length) continue;
+      throw error;
+    }
+    payload = null;
+    try { payload = await response.json(); } catch {}
+    validPayload = payload && typeof payload === "object";
+    if (path === "/v1/status") validPayload = validPayload && Array.isArray(payload.nodes) && Array.isArray(payload.subscriptions) && typeof payload.selected === "string";
+    if (path === "/v1/nodes/ping") validPayload = validPayload && payload.method === "gateway-proxy" && payload.id === body?.id;
+    const retryable = [404, 500, 502, 503, 504].includes(response.status) || (response.ok && !validPayload);
+    if (readOnly && retryable && index + 1 < candidates.length) continue;
+    if (response.ok && validPayload) {
+      gatewayEndpointCache.set(cacheKey, { base, at: Date.now() });
+      while (gatewayEndpointCache.size > 32) gatewayEndpointCache.delete(gatewayEndpointCache.keys().next().value);
+      controller.apiUrl = base;
+    }
+    break;
   }
   if (!response.ok) {
     if (path === "/v1/nodes/ping" && response.status === 404) {
@@ -840,6 +889,7 @@ async function gatewayRequest(state, path, { method = "GET", body = null, gatewa
     }
     throw new Error(payload?.error || `Routeva Gateway ответил HTTP ${response.status}`);
   }
+  if (!validPayload) throw new Error("Gateway вернул некорректный ответ");
   return { payload, gateway: controller };
 }
 
